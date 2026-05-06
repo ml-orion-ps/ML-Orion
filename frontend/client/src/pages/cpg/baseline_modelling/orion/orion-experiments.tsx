@@ -22,13 +22,14 @@ import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
 const FALLBACK_ALGORITHMS = [
-  { value: "Auto", label: "Auto (Best Model)", desc: "Trains RF, LightGBM, and XGBoost — selects best performer" },
+  { value: "Auto", label: "Auto (Best Model)", desc: "Trains Ridge Regression, RF and XGBoost — selects best performer" },
   { value: "Random Forest", label: "Random Forest", desc: "Ensemble of decision trees — robust and interpretable" },
   { value: "XGBoost", label: "XGBoost", desc: "Optimized gradient boosting — industry standard" },
   { value: "LightGBM", label: "LightGBM", desc: "Fast gradient boosting framework — enterprise-grade" },
+  { value: "Ridge Regression", label: "Ridge Regression", desc: "Linear regression with L2 regularization — simple and effective" }
 ];
 const FALLBACK_ALGORITHMS_BASELINE = [
-  { value: "Auto", label: "Auto (Best Model)", desc: "Trains RF, LightGBM, and XGBoost — selects best performer" },
+  { value: "Auto", label: "Auto (Best Model)", desc: "Trains Ridge Regression, RF and XGBoost — selects best performer" },
   { value: "Random Forest", label: "Random Forest", desc: "Ensemble of decision trees — robust and interpretable" },
   { value: "XGBoost", label: "XGBoost", desc: "Optimized gradient boosting — industry standard" },
   { value: "Ridge Regression", label: "Ridge Regression", desc: "Linear regression with L2 regularization — simple and effective" },
@@ -304,7 +305,7 @@ export default function OrionExperiments() {
   const baselineRunChartKeys = last8BaselineRuns.map((r) => `#${baselineRuns.indexOf(r) + 1} ${r.bestModel}`);
   const baselineComparisonData = last8BaselineRuns.map((r, i) => ({
     name: baselineRunChartKeys[i],
-    "R²": r.r2 != null ? Number(r.r2) : 0,
+    rmse: r.rmse != null ? Number(r.rmse) : 0,
   }));
 
   const MODEL_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899", "#84cc16"];
@@ -763,67 +764,50 @@ export default function OrionExperiments() {
         {/* ── RIGHT: Charts & Table ── */}
         <div className="lg:col-span-3 space-y-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {experimentType === "baseline" ? (
-              <>
-                <KpiCard label="Experiments" value={baselineRuns.length} />
-                <KpiCard label="Best R²" value={bestBaselineRun?.r2 != null ? Number(bestBaselineRun.r2).toFixed(3) : "—"} />
-                <KpiCard label="Best Model" value={bestBaselineRun?.bestModel ?? "—"} />
-                <KpiCard label="Deployed" value={(models as ModelType[]).filter(m => m.isDeployed).length} />
-
-              </>
-            ) : (
-              <>
-                <KpiCard label="Experiments" value={(models as ModelType[]).length} />
-                <KpiCard
-                  label="Best AUC"
-                  value={bestModel ? `${((bestModel.auc || 0) * 100).toFixed(1)}%` : "—"}
-                />
-                <KpiCard
-                  label="Best Algorithm"
-                  value={bestModel ? bestModel.algorithm.split(" ")[0] : "—"}
-                />
-                <KpiCard label="Deployed" value={(models as ModelType[]).filter(m => m.isDeployed).length} />
-              </>
-            )}
+            <KpiCard label="Experiments" value={baselineRuns.length} />
+            <KpiCard label="Best RMSE" value={bestBaselineRun?.rmse != null ? Number(bestBaselineRun.rmse).toFixed(3) : "—"} />
+            <KpiCard label="Best Model" value={bestBaselineRun?.bestModel ?? "—"} />
+             <KpiCard label="Deployed" value={(models as ModelType[]).filter(m => m.isDeployed).length} />
           </div>
 
           {/* Model Comparison Bar Chart */}
+          {/* Model Comparison Bar Chart */}
           <div className="border rounded-lg p-4 bg-card">
-            <h3 className="text-sm font-semibold mb-3">Model Comparison (last 8 experiments)</h3>
-            {experimentType === "baseline" ? (
-              baselineRuns.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">Train your first model to see comparisons.</p>
-              ) : (
-                <ResponsiveContainer width="100%" height={220}>
-                  <BarChart data={baselineComparisonData} margin={{ left: -10 }}>
-                    <XAxis dataKey="name" tick={{ fontSize: 11 }} />
-                    <YAxis domain={[0, 1]} tick={{ fontSize: 10 }} />
-                    <Tooltip formatter={(v: any) => [Number(v).toFixed(3), "R²"]} />
-                    <Legend wrapperStyle={{ fontSize: 10 }} />
-                    {last8BaselineRuns.map((_, i) => (
-                      <Bar key={baselineRunChartKeys[i]} dataKey="R²" fill={MODEL_COLORS[i % MODEL_COLORS.length]} radius={[2, 2, 0, 0]} />
-                    )).slice(0, 1)}
-                  </BarChart>
-                </ResponsiveContainer>
-              )
-            ) : (models as ModelType[]).length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">Train your first model to see comparisons.</p>
+            <h3 className="text-sm font-semibold mb-3">
+              Model Comparison (last 8 experiments)
+            </h3>
+
+            {baselineRuns.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">
+                Train your first model to see comparisons.
+              </p>
             ) : (
               <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={comparisonData} margin={{ left: -10 }}>
-                  <XAxis dataKey="metric" tick={{ fontSize: 11 }} />
+                <BarChart data={baselineComparisonData} margin={{ left: -10 }}>
+                  <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+
                   <YAxis domain={[0, 1]} tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={(v: any, name: string) => [Number(v).toFixed(3), name]} />
+
+                  <Tooltip
+                    formatter={(v: any) => [Number(v).toFixed(3), "rmse"]}
+                  />
+
                   <Legend wrapperStyle={{ fontSize: 10 }} />
-                  {modelChartKeys.map((key, i) => (
-                    <Bar key={key} dataKey={key} fill={MODEL_COLORS[i % MODEL_COLORS.length]} radius={[2, 2, 0, 0]} />
-                  ))}
+
+                  {last8BaselineRuns.map((_, i) => (
+                    <Bar
+                      key={baselineRunChartKeys[i]}
+                      dataKey="rmse"
+                      fill={MODEL_COLORS[i % MODEL_COLORS.length]}
+                      radius={[2, 2, 0, 0]}
+                    />
+                  )).slice(0, 1)}
                 </BarChart>
               </ResponsiveContainer>
             )}
           </div>
 
-          {/* Feature Importance */}
+          {/* Feature Importance
           {experimentType === "churn" && modelsWithFeatures.length > 0 && (
             <div className="border rounded-lg bg-card overflow-hidden">
               <div className="px-4 py-3 border-b flex items-center gap-3">
@@ -880,152 +864,175 @@ export default function OrionExperiments() {
                 </div>
               )}
             </div>
-          )}
+          )} */}
 
-          {/* All Experiments Table */}
-          <div className="border rounded-lg bg-card">
-            <div className="p-4 border-b flex items-center justify-between">
-              <h3 className="text-sm font-semibold">All Experiments</h3>
-              <div className="flex items-center gap-2">
-                <Badge variant="outline">{experimentType === "baseline" ? `${baselineRuns.length} total` : `${(models as ModelType[]).length} total`}</Badge>
-                <button
-                  className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                  onClick={() => navigate("/orion/deploy")}
-                >
-                  Deploy & Score <ArrowRight className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-muted/50">
-                  <tr>
-                    {(experimentType === "baseline"
-                      ? ["Run Name", "Best Model", "MAE", "RMSE", "R²", "Baseline Units", "Promo Units", "Residual Units", "Status", "Actions"]
-                      : ["Model", "Algorithm", "AUC (OOS)", "AUC (Val)", "F1 (OOS)", "Recall@10(OOS)", "Precision@10(OOS)", "Lift@10(OOS)", "Status", "Actions"]
-                    ).map(h => (
-                      <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {experimentType === "baseline" && baselineRuns.length === 0 && (
-                    <tr>
-                      <td colSpan={10} className="p-6 text-center text-muted-foreground">No experiments yet. Run your first baseline prediction above.</td>
-                    </tr>
-                  )}
-                  {experimentType === "baseline" && baselineRuns.map(run => (
-                    <tr key={run.id} className="border-t hover:bg-muted/30 transition-colors">
-                      <td className="p-3 font-medium max-w-[150px] truncate" title={run.name}>{run.name}</td>
-                      <td className="p-3 whitespace-nowrap font-semibold">{run.bestModel}</td>
-                      {/* <td className="p-3 font-mono">{run.testWmape != null ? `${(Number(0.102) * 100).toFixed(1)}%` : "—"}</td> */}
-                      {/* <td className="p-3 font-mono">{run.testWmape != null ? `${(Number(run.testWmape) * 100).toFixed(1)}%` : "—"}</td> */}
+      {/* All Experiments Table */}
+      <div className="border rounded-lg bg-card">
+        <div className="p-4 border-b flex items-center justify-between">
+          <h3 className="text-sm font-semibold">All Experiments</h3>
 
-                      <td className="p-3 font-semibold text-blue-600 font-mono">{asNumber(run.mae)}</td>
-                      <td className="p-3 font-mono">{asNumber(run.rmse)}</td>
-                      <td className="p-3 font-mono">{run.r2 != null ? Number(run.r2).toFixed(3) : "—"}</td>
-                      <td className="p-3 font-mono">{asNumber(run.baselineUnits)}</td>
-                      <td className="p-3 font-mono">{asNumber(run.promoUnits)}</td>
-                      <td className="p-3 font-mono">{asNumber(run.residualUnits)}</td>
-                      <td className="p-3"><StatusBadge status={run.status} /></td>
-                      <td className="p-3">
-                        <div className="flex gap-1.5">
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 text-[10px] gap-1 px-2 text-red-600 hover:bg-red-50 border-red-200"
-                            onClick={() => setBaselineRuns(prev => prev.filter(r => r.id !== run.id))}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                  {experimentType === "churn" && (models as ModelType[]).length === 0 && (
-                    <tr>
-                      <td colSpan={10} className="p-6 text-center text-muted-foreground">No experiments yet. Train your first model above.</td>
-                    </tr>
-                  )}
-                  {experimentType === "churn" && (models as ModelType[]).map(m => (
-                    <tr
-                      key={m.id}
-                      className={`border-t cursor-pointer transition-colors ${selectedModel?.id === m.id ? "bg-primary/5" : "hover:bg-muted/30"}`}
-                      onClick={() => setSelectedModel(m)}
-                      data-testid={`row-experiment-${m.id}`}
-                    >
-                      <td className="p-3 font-medium max-w-[150px] truncate" title={m.name}>{m.name}</td>
-                      <td className="p-3 whitespace-nowrap">{m.algorithm}</td>
-                      <td className="p-3 font-semibold text-blue-600">{asPercent(getOosMetric(m, "auc"))}</td>
-                      <td className="p-3">{asPercent(getValidationAuc(m))}</td>
-                      <td className="p-3">{asFraction(getOosMetric(m, "f1Score"))}</td>
-                      <td className="p-3">{asPercent(getOosMetric(m, "recallTop10"))}</td>
-                      <td className="p-3">{asPercent(getOosMetric(m, "precisionTop10"))}</td>
-                      <td className="p-3">{asLift(getOosMetric(m, "liftTop10"))}</td>
-                      <td className="p-3"><StatusBadge status={m.isDeployed ? "Production" : m.status} /></td>
-                      <td className="p-3">
-                        <div className="flex gap-1.5" onClick={e => e.stopPropagation()}>
-                          {!m.isDeployed && (
-                            <Button
-                              size="sm"
-                              className="h-6 text-[10px] gap-1 px-2"
-                              onClick={() => deployMut.mutate(m.id)}
-                              disabled={deployMut.isPending}
-                              data-testid={`button-deploy-row-${m.id}`}
-                            >
-                              <Rocket className="w-3 h-3" /> Deploy
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 text-[10px] gap-1 px-2"
-                            onClick={() => navigate("/orion/deploy")}
-                            data-testid={`button-score-row-${m.id}`}
-                          >
-                            <Zap className="w-3 h-3" /> Score
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="h-6 text-[10px] gap-1 px-2 text-red-600 hover:bg-red-50 border-red-200"
-                            onClick={() => setDeleteTargetId(m.id)}
-                            data-testid={`button-delete-row-${m.id}`}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">
+              {baselineRuns.length} total
+            </Badge>
+
+            <button
+              className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+              onClick={() => navigate("/orion/deploy")}
+            >
+              Deploy & Score <ArrowRight className="w-3 h-3" />
+            </button>
           </div>
         </div>
-      </div>
 
-      {/* Delete confirmation dialog */}
-      <AlertDialog open={deleteTargetId !== null} onOpenChange={open => { if (!open) setDeleteTargetId(null); }}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this model?</AlertDialogTitle>
-            <AlertDialogDescription>
-              This will permanently delete the model and all its scoring predictions. This action cannot be undone.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              className="bg-red-600 hover:bg-red-700"
-              onClick={() => deleteTargetId !== null && deleteMut.mutate(deleteTargetId)}
-              data-testid="button-confirm-delete"
-            >
-              {deleteMut.isPending ? "Deleting…" : "Delete Model"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </OrionLayout>
-  );
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/50">
+              <tr>
+                {[
+                  "Run Name",
+                  "Best Model",
+                  "MAE",
+                  "RMSE",
+                  "R²",
+                  "Baseline Units",
+                  "Promo Units",
+                  "Residual Units",
+                  "Status",
+                  "Actions",
+                ].map((h) => (
+                  <th
+                    key={h}
+                    className="text-left p-3 font-medium text-muted-foreground"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+
+            <tbody>
+              {baselineRuns.length === 0 && (
+                <tr>
+                  <td
+                    colSpan={10}
+                    className="p-6 text-center text-muted-foreground"
+                  >
+                    No experiments yet. Run your first baseline prediction above.
+                  </td>
+                </tr>
+              )}
+
+              {baselineRuns.map((run) => (
+                <tr
+                  key={run.id}
+                  className="border-t hover:bg-muted/30 transition-colors"
+                >
+                  <td
+                    className="p-3 font-medium max-w-[150px] truncate"
+                    title={run.name}
+                  >
+                    {run.name}
+                  </td>
+
+                  <td className="p-3 whitespace-nowrap font-semibold">
+                    {run.bestModel}
+                  </td>
+
+                  <td className="p-3 font-semibold text-blue-600 font-mono">
+                    {asNumber(run.mae)}
+                  </td>
+
+                  <td className="p-3 font-mono">
+                    {asNumber(run.rmse)}
+                  </td>
+
+                  <td className="p-3 font-mono">
+                    {run.r2 != null
+                      ? Number(run.r2).toFixed(3)
+                      : "—"}
+                  </td>
+
+                  <td className="p-3 font-mono">
+                    {asNumber(run.baselineUnits)}
+                  </td>
+
+                  <td className="p-3 font-mono">
+                    {asNumber(run.promoUnits)}
+                  </td>
+
+                  <td className="p-3 font-mono">
+                    {asNumber(run.residualUnits)}
+                  </td>
+
+                  <td className="p-3">
+                    <StatusBadge status={run.status} />
+                  </td>
+
+                  <td className="p-3">
+                    <div className="flex gap-1.5">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-[10px] gap-1 px-2 text-red-600 hover:bg-red-50 border-red-200"
+                        onClick={() =>
+                          setBaselineRuns((prev) =>
+                            prev.filter((r) => r.id !== run.id)
+                          )
+                        }
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {/* Delete confirmation dialog */}
+  <AlertDialog
+    open={deleteTargetId !== null}
+    onOpenChange={(open) => {
+      if (!open) setDeleteTargetId(null);
+    }}
+  >
+    <AlertDialogContent>
+      <AlertDialogHeader>
+        <AlertDialogTitle>
+          Delete this model?
+        </AlertDialogTitle>
+
+        <AlertDialogDescription>
+          This will permanently delete the model and all its
+          scoring predictions. This action cannot be undone.
+        </AlertDialogDescription>
+      </AlertDialogHeader>
+
+      <AlertDialogFooter>
+        <AlertDialogCancel>
+          Cancel
+        </AlertDialogCancel>
+
+        <AlertDialogAction
+          className="bg-red-600 hover:bg-red-700"
+          onClick={() =>
+            deleteTargetId !== null &&
+            deleteMut.mutate(deleteTargetId)
+          }
+          data-testid="button-confirm-delete"
+        >
+          {deleteMut.isPending
+            ? "Deleting…"
+            : "Delete Model"}
+        </AlertDialogAction>
+      </AlertDialogFooter>
+    </AlertDialogContent>
+  </AlertDialog>
+</OrionLayout>
+)
 }
