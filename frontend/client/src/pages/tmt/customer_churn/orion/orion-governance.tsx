@@ -52,7 +52,7 @@ export default function OrionGovernancePage() {
   return (
     <OrionLayout title="Governance" subtitle="Model registry, compliance, and full audit trail" isLoading={isLoading}>
       <div className="space-y-4">
-        <OrionNav current="/orion/governance" />
+        <OrionNav current="/tmt/customer-churn/orion/governance" />
 
         {/* KPI Row */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">

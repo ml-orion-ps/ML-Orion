@@ -138,7 +138,7 @@ export default function OrionOverview() {
 
   return (
     <OrionLayout title="ML Orion Overview" subtitle="Decision model factory — all numbers from live database" isLoading={isLoading}>
-      <div className="mb-4"><OrionNav current="/orion/overview" /></div>
+      <div className="mb-4"><OrionNav current="/tmt/customer-churn/orion/overview" /></div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <KpiCard label="Total Models" value={kpis.totalModels ?? "—"} />
         <KpiCard label="Deployed" value={kpis.deployedModels ?? "—"} trend={kpis.deployedModels > 0 ? "up" : undefined} />
@@ -207,8 +207,58 @@ export default function OrionOverview() {
         </div>
       </div>
 
+      {/* ── MODEL REGISTRY ── */}
+      <div className="border rounded-lg bg-card">
+        <div className="p-4 border-b">
+          <h3 className="text-sm font-semibold">Model Registry</h3>
+          <p className="text-xs text-muted-foreground mt-1">Manage all trained models — deploy to activate churn scoring</p>
+        </div>
+        {(!models || models.length === 0) ? (
+          <p className="text-sm text-muted-foreground text-center py-10">No models yet. Train your first model in the Experiment Lab.</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-muted/50">
+                <tr>
+                  {["Name", "Algorithm", "Status", "Accuracy", "AUC", "F1", "Precision", "Recall", "Actions"].map(h => (
+                    <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {models.map((m: any) => (
+                  <tr key={m.id} className="border-t hover:bg-muted/30 transition-colors" data-testid={`row-model-${m.id}`}>
+                    <td className="p-3 font-medium max-w-[180px] truncate" title={m.name}>{m.name}</td>
+                    <td className="p-3 text-muted-foreground">{m.algorithm}</td>
+                    <td className="p-3"><StatusBadge status={m.isDeployed ? "Production" : m.status} /></td>
+                    <td className="p-3">{m.accuracy ? `${(m.accuracy * 100).toFixed(1)}%` : "—"}</td>
+                    <td className="p-3 font-semibold text-blue-600">{m.auc ? `${(m.auc * 100).toFixed(1)}%` : "—"}</td>
+                    <td className="p-3">{m.f1Score ? `${(m.f1Score * 100).toFixed(1)}%` : "—"}</td>
+                    <td className="p-3">{m.precision ? `${(m.precision * 100).toFixed(1)}%` : "—"}</td>
+                    <td className="p-3">{m.recall ? `${(m.recall * 100).toFixed(1)}%` : "—"}</td>
+                    <td className="p-3">
+                      {m.isDeployed ? (
+                        <Button size="sm" variant="outline" className="h-6 text-xs gap-1" data-testid={`button-undeploy-${m.id}`}
+                          onClick={() => undeployMut.mutate(m.id)} disabled={undeployMut.isPending}>
+                          <PauseCircle className="w-3 h-3" /> Undeploy
+                        </Button>
+                      ) : (
+                        <Button size="sm" className="h-6 text-xs gap-1" data-testid={`button-deploy-${m.id}`}
+                          onClick={() => deployMut.mutate(m.id)} disabled={deployMut.isPending}>
+                          <Rocket className="w-3 h-3" /> Deploy
+                        </Button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
       {/* ── BACKEND CODE EXPLORER ── */}
-      <div className="border rounded-lg bg-card mb-4 overflow-hidden">
+      <div className="border rounded-lg bg-card mt-4 overflow-hidden">
         <button
           className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors text-left"
           onClick={() => { setCodeOpen(o => !o); setEditMode(false); setEditContent(null); }}
@@ -259,14 +309,14 @@ export default function OrionOverview() {
               <div className="flex items-center justify-between px-4 py-2 bg-muted/10 border-b text-[10px] text-muted-foreground">
                 <div className="flex items-center gap-4">
                   <span className="font-mono text-foreground font-medium">
-                    {activeFileId === "train_model" ? "server/python-ml/train_model.py" :
-                     activeFileId === "schema" ? "fastapi_server/schemas.py" :
-                     activeFileId === "storage" ? "fastapi_server/storage.py" :
-                     activeFileId === "engine" ? "fastapi_server/services/custom_features.py" :
-                     activeFileId === "seed" ? "fastapi_server/storage.py" :
-                     activeFileId === "calculate_shap" ? "server/python-ml/calculate_shap.py" :
-                     activeFileId === "ml_service" ? "fastapi_server/services/ml_service.py" :
-                     activeFileId === "models" ? "fastapi_server/models.py" : activeFileId}
+                    {activeFileId === "train_model" ? "ML_backend/python-ml/tmt/customer_churn/train_model.py" :
+                     activeFileId === "schema" ? "backend/schemas.py" :
+                     activeFileId === "storage" ? "backend/storage.py" :
+                     activeFileId === "engine" ? "backend/services/custom_features.py" :
+                     activeFileId === "seed" ? "backend/storage.py" :
+                     activeFileId === "calculate_shap" ? "ML_backend/python-ml/tmt/customer_churn/calculate_shap.py" :
+                     activeFileId === "ml_service" ? "backend/services/ml_service.py" :
+                     activeFileId === "models" ? "backend/models.py" : activeFileId}
                   </span>
                   <span>{codeFile.lines?.toLocaleString()} lines</span>
                   <span>Last modified: {new Date(codeFile.lastModified).toLocaleString()}</span>
@@ -343,54 +393,6 @@ export default function OrionOverview() {
         )}
       </div>
 
-      <div className="border rounded-lg bg-card">
-        <div className="p-4 border-b">
-          <h3 className="text-sm font-semibold">Model Registry</h3>
-          <p className="text-xs text-muted-foreground mt-1">Manage all trained models — deploy to activate churn scoring</p>
-        </div>
-        {(!models || models.length === 0) ? (
-          <p className="text-sm text-muted-foreground text-center py-10">No models yet. Train your first model in the Experiment Lab.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-xs">
-              <thead className="bg-muted/50">
-                <tr>
-                  {["Name", "Algorithm", "Status", "Accuracy", "AUC", "F1", "Precision", "Recall", "Actions"].map(h => (
-                    <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {models.map((m: any) => (
-                  <tr key={m.id} className="border-t hover:bg-muted/30 transition-colors" data-testid={`row-model-${m.id}`}>
-                    <td className="p-3 font-medium max-w-[180px] truncate" title={m.name}>{m.name}</td>
-                    <td className="p-3 text-muted-foreground">{m.algorithm}</td>
-                    <td className="p-3"><StatusBadge status={m.isDeployed ? "Production" : m.status} /></td>
-                    <td className="p-3">{m.accuracy ? `${(m.accuracy * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="p-3 font-semibold text-blue-600">{m.auc ? `${(m.auc * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="p-3">{m.f1Score ? `${(m.f1Score * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="p-3">{m.precision ? `${(m.precision * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="p-3">{m.recall ? `${(m.recall * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="p-3">
-                      {m.isDeployed ? (
-                        <Button size="sm" variant="outline" className="h-6 text-xs gap-1" data-testid={`button-undeploy-${m.id}`}
-                          onClick={() => undeployMut.mutate(m.id)} disabled={undeployMut.isPending}>
-                          <PauseCircle className="w-3 h-3" /> Undeploy
-                        </Button>
-                      ) : (
-                        <Button size="sm" className="h-6 text-xs gap-1" data-testid={`button-deploy-${m.id}`}
-                          onClick={() => deployMut.mutate(m.id)} disabled={deployMut.isPending}>
-                          <Rocket className="w-3 h-3" /> Deploy
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
     </OrionLayout>
   );
 }

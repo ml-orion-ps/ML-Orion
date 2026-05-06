@@ -18,43 +18,43 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { getIndustry, getUseCase } from "@/data/use-cases";
 
 const churnDiagnosticsItems = [
-  { title: "Pattern Explorer", url: "/churn-diagnostics/patterns", icon: LineChart },
-  { title: "Segment Intelligence", url: "/churn-diagnostics/segments", icon: Layers },
-  { title: "Driver Analysis", url: "/churn-diagnostics/drivers", icon: Activity },
-  { title: "Financial Impact", url: "/churn-diagnostics/financial", icon: DollarSign },
+  { title: "Pattern Explorer", url: "/tmt/customer-churn/churn-diagnostics/patterns", icon: LineChart },
+  { title: "Segment Intelligence", url: "/tmt/customer-churn/churn-diagnostics/segments", icon: Layers },
+  { title: "Driver Analysis", url: "/tmt/customer-churn/churn-diagnostics/drivers", icon: Activity },
+  { title: "Financial Impact", url: "/tmt/customer-churn/churn-diagnostics/financial", icon: DollarSign },
 ];
 
 const riskIntelligenceItems = [
-  { title: "Risk Overview", url: "/risk-intelligence/overview", icon: Shield },
-  { title: "Customer Risk Explorer", url: "/risk-intelligence/explorer", icon: Search },
-  { title: "Early Warning Signals", url: "/risk-intelligence/warnings", icon: AlertTriangle },
+  { title: "Risk Overview", url: "/tmt/customer-churn/risk-intelligence/overview", icon: Shield },
+  { title: "Customer Risk Explorer", url: "/tmt/customer-churn/risk-intelligence/explorer", icon: Search },
+  { title: "Early Warning Signals", url: "/tmt/customer-churn/risk-intelligence/warnings", icon: AlertTriangle },
 ];
 
 const retentionItems = [
-  { title: "Recommended Actions", url: "/retention/actions", icon: Target },
-  { title: "Intervention Queue", url: "/retention/queue", icon: Zap },
-  { title: "Execution Tracker", url: "/retention/tracker", icon: Eye },
+  { title: "Recommended Actions", url: "/tmt/customer-churn/retention/actions", icon: Target },
+  { title: "Intervention Queue", url: "/tmt/customer-churn/retention/queue", icon: Zap },
+  { title: "Execution Tracker", url: "/tmt/customer-churn/retention/tracker", icon: Eye },
 ];
 
 const businessImpactItems = [
-  { title: "Revenue Protection", url: "/business-impact/revenue", icon: DollarSign },
-  { title: "ROI Analysis", url: "/business-impact/roi", icon: PieChart },
-  { title: "Migration Economics", url: "/business-impact/migration", icon: ArrowRightLeft },
+  { title: "Revenue Protection", url: "/tmt/customer-churn/business-impact/revenue", icon: DollarSign },
+  { title: "ROI Analysis", url: "/tmt/customer-churn/business-impact/roi", icon: PieChart },
+  { title: "Migration Economics", url: "/tmt/customer-churn/business-impact/migration", icon: ArrowRightLeft },
 ];
 
 const strategyItems = [
-  { title: "Competitive Landscape", url: "/strategy/competitive", icon: Globe },
-  { title: "Network Health Impact", url: "/strategy/network", icon: Wifi },
-  { title: "Migration Intelligence", url: "/strategy/migration", icon: ArrowRightLeft },
+  { title: "Competitive Landscape", url: "/tmt/customer-churn/strategy/competitive", icon: Globe },
+  { title: "Network Health Impact", url: "/tmt/customer-churn/strategy/network", icon: Wifi },
+  { title: "Migration Intelligence", url: "/tmt/customer-churn/strategy/migration", icon: ArrowRightLeft },
 ];
 
 const orionItems = [
-  { title: "ML Overview", url: "/orion/overview", icon: BriefcaseBusiness },
-  { title: "Data Hub", url: "/orion/data", icon: Database },
-  { title: "Experiment Lab", url: "/orion/experiments", icon: FlaskConical },
-  { title: "Deployment & Scoring", url: "/orion/deploy", icon: Rocket },
-  { title: "Outcomes & Recommendations", url: "/orion/outcomes", icon: TrendingUp },
-  { title: "Governance & Audit", url: "/orion/governance", icon: Gavel },
+  { title: "ML Overview", url: "/tmt/customer-churn/orion/overview", icon: BriefcaseBusiness },
+  { title: "Data Hub", url: "/tmt/customer-churn/orion/data", icon: Database },
+  { title: "Experiment Lab", url: "/tmt/customer-churn/orion/experiments", icon: FlaskConical },
+  { title: "Deployment & Scoring", url: "/tmt/customer-churn/orion/deploy", icon: Rocket },
+  { title: "Outcomes & Recommendations", url: "/tmt/customer-churn/orion/outcomes", icon: TrendingUp },
+  { title: "Governance & Audit", url: "/tmt/customer-churn/orion/governance", icon: Gavel },
 ];
 
 interface NavItem {
@@ -193,8 +193,8 @@ export function AppSidebar() {
   const demoUseCaseId = demoMatch?.[2] ?? "";
 
   const isBusinessActive = businessUrls.some(u => location === u || location.startsWith(u + "/"));
-  const [businessOpen, setBusinessOpen] = useState(isBusinessActive || location === "/");
-
+  const [businessOpen, setBusinessOpen] = useState(isBusinessActive || location === "/tmt/customer-churn");
+  const isCpgPage = location.startsWith("/cpg/baseline-modelling");
   const demoUseCase = isDemoPage ? getUseCase(demoIndustryId, demoUseCaseId) : null;
 
   return (
@@ -226,13 +226,13 @@ export function AppSidebar() {
               <SidebarGroupContent>
                 <SidebarMenu>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild data-active={location === "/home"} data-testid="nav-platform-home">
-                      <Link href="/home"><LayoutGrid className="w-4 h-4" /><span>Platform Home</span></Link>
+                    <SidebarMenuButton asChild data-active={location === "/"} data-testid="nav-platform-center">
+                      <Link href="/"><LayoutGrid className="w-4 h-4" /><span>Platform Center</span></Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild data-active={location === "/"} data-testid="nav-command-center">
-                      <Link href="/"><LayoutDashboard className="w-4 h-4" /><span>Command Center</span></Link>
+                    <SidebarMenuButton asChild data-active={location === "/tmt/customer-churn"} data-testid="nav-command-center">
+                      <Link href="/tmt/customer-churn"><LayoutDashboard className="w-4 h-4" /><span>Command Center</span></Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </SidebarMenu>
@@ -269,12 +269,16 @@ export function AppSidebar() {
         {(() => {
           const orionBase = isDemoPage
             ? `/demo/${demoIndustryId}/${demoUseCaseId}/orion`
-            : `/orion`;
+            : isCpgPage
+            ? `/cpg/baseline-modelling/orion`
+            : `/tmt/customer-churn/orion`;
           const resolvedOrionItems = orionItems.map(item => ({
             ...item,
-            url: `${orionBase}/${item.url.replace("/orion/", "")}`,
+            url: `${orionBase}/${item.url.replace("/tmt/customer-churn/orion/", "")}`,
           }));
-          const isOrionActive = location.startsWith("/orion/") || location.includes("/orion/");
+          const isOrionActive = location.startsWith("/tmt/customer-churn/orion/")
+            || location.startsWith("/cpg/baseline-modelling/orion/")
+            || location.includes("/orion/");
           return (
             <Collapsible defaultOpen={isOrionActive}>
               <SidebarGroup>

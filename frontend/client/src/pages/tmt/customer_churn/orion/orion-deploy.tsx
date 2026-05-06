@@ -131,7 +131,7 @@
 //   return (
 //     <OrionLayout title="Deploy & Scoring" subtitle="Production model management, drift monitoring, and approval workflow">
 //       <div className="space-y-4">
-//         <OrionNav current="/orion/deploy" />
+//         <OrionNav current="/tmt/customer-churn/orion/deploy" />
 
 //         {/* KPI Row */}
 //         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
@@ -770,7 +770,7 @@ export default function OrionDeployPage() {
   return (
     <OrionLayout title="Deploy & Scoring" subtitle="Production model management, drift monitoring, and AI-powered observability">
       <div className="space-y-4">
-        <OrionNav current="/orion/deploy" />
+        <OrionNav current="/tmt/customer-churn/orion/deploy" />
 
         {/* KPI Row */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">

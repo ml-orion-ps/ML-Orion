@@ -6,7 +6,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
 import NotFound from "@/pages/not-found";
-import PlatformCenter from "@/pages/platform/index";
 import Dashboard from "@/pages/tmt/customer_churn/dashboard";
 import ChurnDiagnostics from "@/pages/tmt/customer_churn/churn-diagnostics";
 import RiskIntelligence from "@/pages/tmt/customer_churn/risk-intelligence";
@@ -19,6 +18,18 @@ import OrionExperiments from "@/pages/tmt/customer_churn/orion/orion-experiments
 import OrionDeploy from "@/pages/tmt/customer_churn/orion/orion-deploy";
 import OrionOutcomes from "@/pages/tmt/customer_churn/orion/orion-outcomes";
 import OrionGovernance from "@/pages/tmt/customer_churn/orion/orion-governance";
+import BaselineDashboard from "@/pages/cpg/baseline_modelling/dashboard";
+import BaselineDiagnostics from "@/pages/cpg/baseline_modelling/baseline-diagnostics";
+import BaselineRiskIntelligence from "@/pages/cpg/baseline_modelling/risk-intelligence";
+import BaselineRetentionCenter from "@/pages/cpg/baseline_modelling/retention-center";
+import BaselineBusinessImpact from "@/pages/cpg/baseline_modelling/business-impact";
+import BaselineStrategyInsights from "@/pages/cpg/baseline_modelling/strategy-insights";
+import BaselineOrionOverview from "@/pages/cpg/baseline_modelling/orion/orion-overview";
+import BaselineOrionData from "@/pages/cpg/baseline_modelling/orion/orion-data";
+import BaselineOrionExperiments from "@/pages/cpg/baseline_modelling/orion/orion-experiments";
+import BaselineOrionDeploy from "@/pages/cpg/baseline_modelling/orion/orion-deploy";
+import BaselineOrionOutcomes from "@/pages/cpg/baseline_modelling/orion/orion-outcomes";
+import BaselineOrionGovernance from "@/pages/cpg/baseline_modelling/orion/orion-governance";
 import LandingPage from "@/pages/landing";
 import UseCaseDemo from "@/pages/use-case-demo";
 import DemoOrionPage from "@/pages/demo-orion";
@@ -29,7 +40,6 @@ function SidebarRouter() {
       <Route path="/demo/:industry/:useCase/orion/:page" component={DemoOrionPage} />
       <Route path="/demo/:industry/:useCase/:section" component={UseCaseDemo} />
       <Route path="/demo/:industry/:useCase" component={UseCaseDemo} />
-      <Route path="/" component={PlatformCenter} />
       <Route path="/tmt/customer-churn" component={Dashboard} />
       <Route path="/tmt/customer-churn/churn-diagnostics/:tab?" component={ChurnDiagnostics} />
       <Route path="/tmt/customer-churn/risk-intelligence/:tab?" component={RiskIntelligence} />
@@ -42,6 +52,19 @@ function SidebarRouter() {
       <Route path="/tmt/customer-churn/orion/deploy" component={OrionDeploy} />
       <Route path="/tmt/customer-churn/orion/outcomes" component={OrionOutcomes} />
       <Route path="/tmt/customer-churn/orion/governance" component={OrionGovernance} />
+      <Route path="/cpg/baseline-modelling" component = {BaselineDashboard} />
+      <Route path="/cpg/baseline-modelling/baseline-diagnostics/:tab?" component={BaselineDiagnostics} />
+      <Route path="/cpg/baseline-modelling/risk-intelligence/:tab?" component={BaselineRiskIntelligence} />
+      <Route path="/cpg/baseline-modelling/retention/:tab?" component={BaselineRetentionCenter} />
+      <Route path="/cpg/baseline-modelling/business-impact/:tab?" component={BaselineBusinessImpact} />
+      <Route path="/cpg/baseline-modelling/strategy/:tab?" component={BaselineStrategyInsights} />
+      <Route path="/cpg/baseline-modelling/orion/overview" component={BaselineOrionOverview} />
+      <Route path="/cpg/baseline-modelling/orion/data" component={BaselineOrionData} />
+      <Route path="/cpg/baseline-modelling/orion/experiments" component={BaselineOrionExperiments} />
+      <Route path="/cpg/baseline-modelling/orion/deploy" component={BaselineOrionDeploy} />
+      <Route path="/cpg/baseline-modelling/orion/outcomes" component={BaselineOrionOutcomes} />
+      <Route path="/cpg/baseline-modelling/orion/governance" component={BaselineOrionGovernance} />
+
       <Route component={NotFound} />
     </Switch>
   );
@@ -59,8 +82,8 @@ function HeaderLabel() {
 function AppContent() {
   const [location] = useLocation();
 
-  /* ── Landing page: no sidebar, full screen ── */
-  if (location === "/home") {
+  /* ── Platform Center & Landing: no sidebar, full screen ── */
+  if (location === "/" || location === "/home") {
     return (
       <div className="h-screen w-full overflow-auto">
         <LandingPage />

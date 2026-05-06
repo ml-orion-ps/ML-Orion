@@ -62,6 +62,41 @@ export const INDUSTRIES: IndustryDef[] = [
     color: "#22c55e",
     accent: "green",
     useCases: [
+      
+      {
+        id: "baseline-prediction",
+        name: "Baseline Prediction",
+        shortName: "Baseline Prediction",
+        description: "Predicted baseline performance without any interventions.",
+        tag: "Operations",
+        route: "/cpg/baseline-modelling",
+        kpis: [
+          { label: "Forecast Accuracy", value: "91.2%", trend: "↑ 2.1pp MoM", up: true, color: "green" },
+          { label: "MAPE", value: "6.4%", trend: "Target <8%", up: true, color: "green" },
+          { label: "Bias", value: "−0.8%", trend: "Near-zero ideal", up: true, color: "blue" },
+          { label: "Service Level", value: "96.5%", trend: "↑ 1.2pp vs plan", up: true, color: "green" },
+        ],
+        businessTabs: [
+          {
+            label: "Forecast vs Actual",
+            description: "Model predictions vs actual demand over rolling 12 months",
+            chartType: "line",
+            chartData: months.map((m, i) => ({ name: m, forecast: 820 + i * 12 + Math.round(Math.random() * 30), actual: 810 + i * 11 + Math.round(Math.random() * 40) })),
+            insightRows: [
+              { label: "Best Forecast Accuracy", value: "Personal Care – 94.8%" },
+              { label: "Worst Accuracy", value: "Beverages – 84.2%" },
+              { label: "Avg Forecast Horizon", value: "13 weeks rolling" },
+              { label: "SKUs Under Forecast", value: "42 of 380 reviewed" },
+            ],
+          },
+          ],
+        orionContext: {
+          targetVariable: "demand_units",
+          features: ["lag_4wk_demand", "lag_13wk_demand", "season_index", "promo_flag", "price", "distribution_pct", "new_sku_flag", "category_trend"],
+          algorithms: ["XGBoost", "LSTM", "SARIMA", "Random Forest", "Prophet"],
+          edaHighlights: ["Strong autocorrelation at lag-4 and lag-13", "Seasonal peak in Q4", "Promo events create demand spikes"],
+        },
+      },
       {
         id: "price-promo",
         name: "Price & Promo Optimization",
@@ -781,7 +816,7 @@ export const INDUSTRIES: IndustryDef[] = [
         description: "End-to-end ML-powered customer churn prediction, risk stratification and automated retention workflow for telecom operators.",
         tag: "Retention",
         isLive: true,
-        route: "/",
+        route: "/tmt/customer-churn",
         kpis: [],
         businessTabs: [],
         orionContext: { targetVariable: "is_churned", features: [], algorithms: [], edaHighlights: [] },

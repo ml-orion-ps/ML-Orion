@@ -22,7 +22,7 @@ function formatCurrency(val: number) {
   return `$${val.toFixed(0)}`;
 }
 
-export default function ChurnDiagnostics() {
+export default function BaselineDiagnostics() {
   const [, params] = useRoute("/churn-diagnostics/:tab");
   const [, navigate] = useLocation();
   const activeTab = params?.tab || "patterns";

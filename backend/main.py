@@ -28,9 +28,11 @@ from sqlalchemy import text
 from database import engine
 from models import Base
 
-from routers import analytics, customers, datasets, ml_models, predictions, orion, audit
-from routers import monitoring, notebook, code as code_router
-
+from routers.tmt.customer_churn import analytics, customers, datasets, ml_models, predictions, orion, audit
+from routers.tmt.customer_churn import monitoring, notebook, code as code_router
+from routers.cpg.baseline_modelling import analytics as cpg_analytics, customers as cpg_customers, datasets as cpg_datasets, ml_models as cpg_ml_models, predictions as cpg_predictions, orion as cpg_orion
+from routers.cpg.baseline_modelling import audit as cpg_audit, monitoring as cpg_monitoring
+from routers.cpg.baseline_modelling import monitoring as global_monitoring
 
 # CamelCase middleware
 # Drizzle (Node.js) returned camelCase; SQLAlchemy returns snake_case.
@@ -142,7 +144,16 @@ app.include_router(audit.router)
 app.include_router(monitoring.router)
 app.include_router(notebook.router)
 app.include_router(code_router.router)
-
+app.include_router(cpg_ml_models.router, prefix="/api/cpg")
+app.include_router(cpg_analytics.router, prefix="/api/cpg")
+app.include_router(cpg_customers.router, prefix="/api/cpg")
+app.include_router(cpg_datasets.router, prefix="/api/cpg")  
+app.include_router(cpg_predictions.router, prefix="/api/cpg")
+app.include_router(cpg_orion.router, prefix="/api/cpg")
+app.include_router(cpg_audit.router, prefix="/api/cpg")
+app.include_router(cpg_monitoring.router, prefix="/api/cpg")
+app.include_router(global_monitoring.router, prefix="/api/monitoring")
+app.include_router(code_router.router, prefix="/api/cpg/code")
 
 @app.get("/api/health")
 def health():

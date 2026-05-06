@@ -147,30 +147,33 @@ export function StatusBadge({ status }: { status: string }) {
   );
 }
 
-export function OrionNav({ current }: { current: string }) {
+export function OrionNav({ current, basePath = "/tmt/customer-churn/orion" }: { current: string; basePath?: string }) {
   const pages = [
-    { label: "Overview", path: "/orion/overview" },
-    { label: "Data Hub", path: "/orion/data" },
-    { label: "Experiments", path: "/orion/experiments" },
-    { label: "Deploy & Score", path: "/orion/deploy" },
-    { label: "Outcomes", path: "/orion/outcomes" },
-    { label: "Governance", path: "/orion/governance" },
+    { label: "Overview",      slug: "overview" },
+    { label: "Data Hub",      slug: "data" },
+    { label: "Experiments",   slug: "experiments" },
+    { label: "Deploy & Score",slug: "deploy" },
+    { label: "Outcomes",      slug: "outcomes" },
+    { label: "Governance",    slug: "governance" },
   ];
   return (
     <div className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
-      {pages.map((p, i) => (
-        <span key={p.path} className="flex items-center gap-1">
-          {i > 0 && <span className="text-muted-foreground/40">›</span>}
-          <a
-            href={p.path}
-            className={`hover:text-foreground transition-colors px-1.5 py-0.5 rounded ${
-              current === p.path ? "text-primary font-medium bg-primary/5" : ""
-            }`}
-          >
-            {p.label}
-          </a>
-        </span>
-      ))}
+      {pages.map((p, i) => {
+        const path = `${basePath}/${p.slug}`;
+        return (
+          <span key={path} className="flex items-center gap-1">
+            {i > 0 && <span className="text-muted-foreground/40">›</span>}
+            <a
+              href={path}
+              className={`hover:text-foreground transition-colors px-1.5 py-0.5 rounded ${
+                current === path ? "text-primary font-medium bg-primary/5" : ""
+              }`}
+            >
+              {p.label}
+            </a>
+          </span>
+        );
+      })}
     </div>
   );
 }

@@ -17,44 +17,47 @@ _ROOT = Path(__file__).parent.parent.parent
 
 # Allowlist of files that the code explorer can read/write.
 # Updated to reference Python files instead of TypeScript originals.
+_ML_SCRIPTS = _ROOT / "ML_backend" / "python-ml" / "tmt" / "customer_churn"
+_BACKEND = _ROOT / "backend"
+
 CODE_FILE_MAP: dict[str, dict] = {
     "train_model": {
-        "path": _ROOT / "server" / "python-ml" / "train_model.py",
+        "path": _ML_SCRIPTS / "train_model.py",
         "label": "ML Trainer",
         "description": "Python ML engine: feature engineering, model selection, and training logic",
     },
     "storage": {
-        "path": _ROOT / "fastapi_server" / "storage.py",
+        "path": _BACKEND / "storage.py",
         "label": "Storage Layer",
         "description": "Data access layer — all CRUD and analytics operations (FastAPI/SQLAlchemy)",
     },
     "engine": {
-        "path": _ROOT / "fastapi_server" / "services" / "custom_features.py",
+        "path": _BACKEND / "services" / "custom_features.py",
         "label": "Feature Engine",
         "description": "Custom feature engine: lag, trend, rolling, ratio, flag, interaction",
     },
     "ml_service": {
-        "path": _ROOT / "fastapi_server" / "services" / "ml_service.py",
+        "path": _BACKEND / "services" / "ml_service.py",
         "label": "ML Service",
         "description": "Calls Python ML scripts — bridges FastAPI routes to ML training scripts",
     },
     "calculate_shap": {
-        "path": _ROOT / "server" / "python-ml" / "calculate_shap.py",
+        "path": _ML_SCRIPTS / "calculate_shap.py",
         "label": "SHAP Explainer",
         "description": "Python script for SHAP model explanations and feature contributions",
     },
     "models": {
-        "path": _ROOT / "fastapi_server" / "models.py",
+        "path": _BACKEND / "models.py",
         "label": "ORM Models",
         "description": "SQLAlchemy ORM models — mirrors the PostgreSQL database schema",
     },
     "schema": {
-        "path": _ROOT / "fastapi_server" / "schemas.py",
+        "path": _BACKEND / "schemas.py",
         "label": "Data Schema",
         "description": "Pydantic request/response schemas and type definitions for all entities",
     },
     "seed": {
-        "path": _ROOT / "fastapi_server" / "storage.py",
+        "path": _BACKEND / "storage.py",
         "label": "Storage & Analytics",
         "description": "All CRUD operations, analytics computations, and business logic for the database layer",
     },
@@ -115,7 +118,7 @@ def update_code_file(file_id: str, body: dict, db: Session = Depends(get_db)):
 @router.get("/orion/algorithms")
 def list_algorithms():
     """Read algorithm names directly from train_model.py."""
-    train_path = _ROOT / "server" / "python-ml" / "train_model.py"
+    train_path = _ML_SCRIPTS / "train_model.py"
     algos = [{"value": "Auto", "label": "Auto (Best Model)", "desc": "Trains multiple models and selects the best performer"}]
 
     try:

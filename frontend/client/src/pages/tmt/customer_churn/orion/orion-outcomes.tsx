@@ -93,7 +93,7 @@ export default function OrionOutcomes() {
 
   return (
     <OrionLayout title="Outcomes & Recommendations" subtitle="Retention action results — same data as Retention Action Center" isLoading={isLoading}>
-      <div className="mb-4"><OrionNav current="/orion/outcomes" /></div>
+      <div className="mb-4"><OrionNav current="/tmt/customer-churn/orion/outcomes" /></div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <KpiCard label="Actions Triggered" value={tracker.actionsTriggered ?? "—"} />
         <KpiCard label="Actions Completed" value={tracker.actionsExecuted ?? "—"} />

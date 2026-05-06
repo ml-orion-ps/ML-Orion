@@ -25,7 +25,7 @@ export default defineConfig(async () => {
     }
   }
 
-  const FASTAPI_PORT = process.env.FASTAPI_PORT || "5000";
+  const FASTAPI_PORT = process.env.FASTAPI_PORT || "8000";
 
   return {
     plugins,

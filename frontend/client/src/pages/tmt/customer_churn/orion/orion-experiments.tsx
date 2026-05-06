@@ -251,7 +251,7 @@ export default function OrionExperiments() {
 
   return (
     <OrionLayout title="Experiment Lab" subtitle="Train, compare, and validate churn prediction models">
-      <div className="mb-4"><OrionNav current="/orion/experiments" /></div>
+      <div className="mb-4"><OrionNav current="/tmt/customer-churn/orion/experiments" /></div>
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* ── LEFT: Train Panel ── */}
         <div className="lg:col-span-2 space-y-4">
@@ -501,7 +501,7 @@ export default function OrionExperiments() {
                   variant="outline"
                   className="w-full gap-2 text-xs"
                   size="sm"
-                  onClick={() => navigate("/orion/deploy")}
+                  onClick={() => navigate("/tmt/customer-churn/orion/deploy")}
                   data-testid="button-goto-deploy"
                 >
                   <Zap className="w-3.5 h-3.5" />
@@ -615,7 +615,7 @@ export default function OrionExperiments() {
                 <Badge variant="outline">{(models as ModelType[]).length} total</Badge>
                 <button
                   className="text-xs text-blue-600 hover:underline flex items-center gap-1"
-                  onClick={() => navigate("/orion/deploy")}
+                  onClick={() => navigate("/tmt/customer-churn/orion/deploy")}
                 >
                   Deploy & Score <ArrowRight className="w-3 h-3" />
                 </button>
@@ -669,7 +669,7 @@ export default function OrionExperiments() {
                             size="sm"
                             variant="outline"
                             className="h-6 text-[10px] gap-1 px-2"
-                            onClick={() => navigate("/orion/deploy")}
+                            onClick={() => navigate("/tmt/customer-churn/orion/deploy")}
                             data-testid={`button-score-row-${m.id}`}
                           >
                             <Zap className="w-3 h-3" /> Score

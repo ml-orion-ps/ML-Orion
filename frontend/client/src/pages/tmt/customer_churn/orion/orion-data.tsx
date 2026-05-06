@@ -436,7 +436,7 @@ export default function OrionDataPage() {
   return (
     <OrionLayout title="Data Hub" subtitle="Dataset registry, EDA, and Feature Engineering" isLoading={edaLoading}>
       <div className="space-y-4">
-        <OrionNav current="/orion/data" />
+        <OrionNav current="/tmt/customer-churn/orion/data" />
 
         <div className="flex gap-1 border-b">
           {(["ingest", "registry", "eda", "quality", "features"] as const).map(t => (

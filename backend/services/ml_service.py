@@ -7,9 +7,12 @@ import tempfile
 import subprocess
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor
+from typing import List, Optional
+ 
 
-# Resolve path to the python-ml directory
-_SCRIPT_DIR = Path(__file__).parent.parent.parent / "server" / "python-ml"
+# Resolve paths to the python-ml directories
+_SCRIPT_DIR = Path(__file__).parent.parent.parent / "ML_backend" / "python-ml" / "tmt" / "customer_churn"
+_CPG_BASELINE_DIR = Path(__file__).parent.parent.parent / "ML_backend" / "python-ml" / "cpg" / "baseline_modelling"
 _PYTHON = sys.executable
 
 
@@ -17,6 +20,8 @@ def _find_python() -> str:
     """Find the correct Python interpreter (venv-aware)."""
     root = Path(__file__).parent.parent.parent
     candidates = [
+        root / "env" / "Scripts" / "python.exe",
+        root / "env" / "bin" / "python",
         root / ".venv" / "Scripts" / "python.exe",
         root / ".venv" / "bin" / "python",
         Path(os.environ.get("PYTHON_PATH", "")),
@@ -27,14 +32,15 @@ def _find_python() -> str:
     return sys.executable
 
 
-def _run_script(script_name: str, input_data: dict, extra_args: list[str] | None = None) -> dict:
+def _run_script(script_name: str, input_data: dict, extra_args: list[str] | None = None, script_dir: Path | None = None) -> dict:
     """
     Run a Python ML script by passing JSON via temp files.
     This is the same pattern as the Node.js python-executor.ts
     but cleaner since it's pure Python.
     """
     python = _find_python()
-    script_path = str(_SCRIPT_DIR / script_name)
+    base_dir = script_dir if script_dir is not None else _SCRIPT_DIR
+    script_path = str(base_dir / script_name)
 
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False, encoding="utf-8") as in_f:
         json.dump(input_data, in_f)
@@ -59,7 +65,7 @@ def _run_script(script_name: str, input_data: dict, extra_args: list[str] | None
             capture_output=True,
             text=True,
             timeout=600,
-            cwd=str(_SCRIPT_DIR),
+            cwd=str(base_dir),
             **extra_kwargs,
         )
         if proc.returncode != 0:
@@ -76,6 +82,24 @@ def _run_script(script_name: str, input_data: dict, extra_args: list[str] | None
                 os.unlink(p)
             except FileNotFoundError:
                 pass
+
+
+def run_baseline_prediction(
+    data: list[dict],
+    models_to_run: Optional[List[str]] = None
+) -> dict:
+    """Run the RGM baseline prediction/decomposition workflow."""
+   
+    # Default to testing all three if the user doesn't specify
+    if models_to_run is None:
+        models_to_run = ["Ridge", "RF", "XGB"]
+       
+    payload = {
+        "data": data,
+        "models_to_run": models_to_run
+    }
+   
+    return _run_script("baseline_prediction.py", payload, script_dir=_CPG_BASELINE_DIR)
 
 
 def run_train_model(

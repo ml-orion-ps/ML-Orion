@@ -24,7 +24,7 @@ const SEVERITY_STYLES: Record<string, string> = {
   low: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20",
 };
 
-export default function Dashboard() {
+export default function BaselineDashboard() {
   const { data, isLoading } = useQuery<any>({ queryKey: ["/api/analytics/command-center"] });
 
   if (isLoading) return <CommandCenterSkeleton />;

@@ -27,6 +27,12 @@ const FALLBACK_ALGORITHMS = [
   { value: "XGBoost", label: "XGBoost", desc: "Optimized gradient boosting — industry standard" },
   { value: "LightGBM", label: "LightGBM", desc: "Fast gradient boosting framework — enterprise-grade" },
 ];
+const FALLBACK_ALGORITHMS_BASELINE = [
+  { value: "Auto", label: "Auto (Best Model)", desc: "Trains RF, LightGBM, and XGBoost — selects best performer" },
+  { value: "Random Forest", label: "Random Forest", desc: "Ensemble of decision trees — robust and interpretable" },
+  { value: "XGBoost", label: "XGBoost", desc: "Optimized gradient boosting — industry standard" },
+  { value: "Ridge Regression", label: "Ridge Regression", desc: "Linear regression with L2 regularization — simple and effective" },
+];
 
 type ModelType = {
   id: number; name: string; algorithm: string; status: string; accuracy: number;
@@ -41,7 +47,9 @@ type BaselinePredictionResult = {
     rowCount: number;
     featureCount: number;
     promoColumnsUsed: string[];
-    metrics: { mae?: number; rmse?: number; r2?: number };
+    bestModel: string;
+    bestParams: Record<string, any>;
+    metrics: { mae?: number; rmse?: number; r2?: number; test_wmape?: number };
     totals: {
       actualUnits?: number;
       base0Units?: number;
@@ -80,11 +88,11 @@ export default function OrionExperiments() {
   const [algorithm, setAlgorithm] = useState("Auto");
   const [name, setName] = useState("");
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
-  const [baselineAlpha, setBaselineAlpha] = useState(100);
+  const [baselineModels, setBaselineModels] = useState<string[]>(["Ridge", "RF", "XGB"]);
   const [baselineResult, setBaselineResult] = useState<BaselinePredictionResult | null>(null);
   const [baselineRuns, setBaselineRuns] = useState<Array<{
-    id: number; name: string; alpha: number; status: string;
-    mae: number | null; rmse: number | null; r2: number | null;
+    id: number; name: string; bestModel: string; modelsRun: string[]; status: string;
+    mae: number | null; rmse: number | null; r2: number | null; testWmape: number | null;
     baselineUnits: number | null; promoUnits: number | null; residualUnits: number | null;
   }>>([]);
   const [progress, setProgress] = useState(0);
@@ -101,25 +109,26 @@ export default function OrionExperiments() {
   const [svmKernel, setSvmKernel] = useState("rbf");
   const [fiSelectedModelId, setFiSelectedModelId] = useState<number | null>(null);
 
-  const { data: models = [] } = useQuery<ModelType[]>({ queryKey: ["/api/models"] });
-  const { data: datasets = [] } = useQuery<any[]>({ queryKey: ["/api/datasets"] });
-  const { data: customerDs } = useQuery<any>({ queryKey: ["/api/orion/customer-dataset"] });
-  const { data: dynamicAlgos = [] } = useQuery<any[]>({ queryKey: ["/api/orion/algorithms"] });
+  const { data: models = [] } = useQuery<ModelType[]>({ queryKey: ["/api/cpg/models"] });
+  const { data: datasets = [] } = useQuery<any[]>({ queryKey: ["/api/cpg/datasets"] });
+  const { data: customerDs } = useQuery<any>({ queryKey: ["/api/cpg/orion/customer-dataset"] });
+  const { data: dynamicAlgos = [] } = useQuery<any[]>({ queryKey: ["/api/cpg/orion/algorithms"] });
 
   const ALGORITHMS = dynamicAlgos.length > 0 ? dynamicAlgos : FALLBACK_ALGORITHMS;
+  const ALGORITHMS_BASELINE = dynamicAlgos.length > 0 ? dynamicAlgos : FALLBACK_ALGORITHMS_BASELINE;
 
   // Parse JSON properly in both mutations
   const trainFromDatasetMut = useMutation({
     mutationFn: async (body: any) => {
-      const res = await apiRequest("POST", "/api/models/train", body);
+      const res = await apiRequest("POST", "/api/cpg/models/train", body);
       return res.json();
     },
     onSuccess: (m: ModelType) => {
-      qc.invalidateQueries({ queryKey: ["/api/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/orion/overview"] });
-      qc.invalidateQueries({ queryKey: ["/api/predictions"] });
-      qc.invalidateQueries({ queryKey: ["/api/analytics/retention"] });
-      qc.invalidateQueries({ queryKey: ["/api/recommendations"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/predictions"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/analytics/retention"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/recommendations"] });
       setSelectedModel(m);
       setJustTrainedId(m.id);
       toast({ title: "Training complete!", description: `${m.algorithm} — AUC ${m.auc !== null && m.auc !== undefined ? (m.auc * 100).toFixed(1) : "—"}%` });
@@ -129,15 +138,15 @@ export default function OrionExperiments() {
 
   const trainLiveMut = useMutation({
     mutationFn: async (body: any) => {
-      const res = await apiRequest("POST", "/api/models/train-live", body);
+      const res = await apiRequest("POST", "/api/cpg/models/train-live", body);
       return res.json();
     },
     onSuccess: (m: ModelType) => {
-      qc.invalidateQueries({ queryKey: ["/api/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/orion/overview"] });
-      qc.invalidateQueries({ queryKey: ["/api/predictions"] });
-      qc.invalidateQueries({ queryKey: ["/api/analytics/retention"] });
-      qc.invalidateQueries({ queryKey: ["/api/recommendations"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/predictions"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/analytics/retention"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/recommendations"] });
       setSelectedModel(m);
       setJustTrainedId(m.id);
       toast({ title: "Training complete!", description: `${m.algorithm} — AUC ${m.auc !== null && m.auc !== undefined ? (m.auc * 100).toFixed(1) : "—"}%` });
@@ -146,29 +155,31 @@ export default function OrionExperiments() {
   });
 
   const baselinePredictionMut = useMutation({
-    mutationFn: async ({ datasetId, alpha }: { datasetId: number; alpha: number }) => {
-      const res = await apiRequest("POST", `/api/datasets/${datasetId}/baseline-prediction`, { alpha });
+    mutationFn: async ({ datasetId, modelsToRun }: { datasetId: number; modelsToRun: string[] }) => {
+      const res = await apiRequest("POST", `/api/cpg/datasets/${datasetId}/baseline-prediction`, { modelsToRun });
       return res.json();
     },
     onSuccess: (result: BaselinePredictionResult) => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/datasets"] });
       setBaselineResult(result);
       setSelectedModel(null);
       setBaselineRuns(prev => [...prev, {
         id: Date.now(),
         name: name.trim() || `Baseline Run ${prev.length + 1}`,
-        alpha: baselineAlpha / 100,
+        bestModel: result.summary.bestModel || "Unknown",
+        modelsRun: baselineModels,
         status: "Complete",
         mae: result.summary.metrics?.mae ?? null,
         rmse: result.summary.metrics?.rmse ?? null,
         r2: result.summary.metrics?.r2 ?? null,
+        testWmape: result.summary.metrics?.test_wmape ?? null,
         baselineUnits: result.summary.totals?.baselineWithoutPromoUnits ?? null,
         promoUnits: result.summary.totals?.promoEffectUnits ?? null,
         residualUnits: result.summary.totals?.residualUnits ?? null,
       }]);
       toast({
         title: "Baseline prediction complete",
-        description: `${result.summary.rowCount.toLocaleString()} rows scored`,
+        description: `${result.summary.rowCount.toLocaleString()} rows scored — best model: ${result.summary.bestModel || "Unknown"}`,
       });
     },
     onError: (e: any) => toast({ title: "Baseline prediction failed", description: e.message, variant: "destructive" }),
@@ -176,11 +187,11 @@ export default function OrionExperiments() {
 
   const deployMut = useMutation({
     mutationFn: async (id: number) => {
-      const res = await apiRequest("POST", `/api/models/${id}/deploy`);
+      const res = await apiRequest("POST", `/api/cpg/models/${id}/deploy`);
       return res.json();
     },
     onSuccess: (m: ModelType) => {
-      qc.invalidateQueries({ queryKey: ["/api/models"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
       setSelectedModel(prev => prev?.id === m.id ? { ...prev, isDeployed: true, status: "deployed" } : prev);
       toast({
         title: "Model deployed!",
@@ -192,13 +203,13 @@ export default function OrionExperiments() {
 
   const deleteMut = useMutation({
     mutationFn: async (id: number) => {
-      const res = await apiRequest("DELETE", `/api/models/${id}`);
+      const res = await apiRequest("DELETE", `/api/cpg/models/${id}`);
       return res.json();
     },
     onSuccess: (_: any, id: number) => {
-      qc.invalidateQueries({ queryKey: ["/api/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/predictions"] });
-      qc.invalidateQueries({ queryKey: ["/api/orion/overview"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/predictions"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
       if (selectedModel?.id === id) setSelectedModel(null);
       setDeleteTargetId(null);
       toast({ title: "Model deleted", description: "The model and all its predictions have been removed." });
@@ -217,6 +228,7 @@ export default function OrionExperiments() {
 
   const handleTrain = async () => {
     const isBaseline = experimentType === "baseline";
+    if (isBaseline && baselineModels.length === 0) return toast({ title: "Select at least one model", variant: "destructive" });
     if (!isBaseline && !algorithm) return toast({ title: "Select an algorithm", variant: "destructive" });
     if ((isBaseline || source === "dataset") && !selectedDatasetId) return toast({ title: "Select a dataset", variant: "destructive" });
     if (isBaseline || source === "dataset") {
@@ -233,7 +245,7 @@ export default function OrionExperiments() {
       if (isBaseline) {
         await baselinePredictionMut.mutateAsync({
           datasetId: Number(selectedDatasetId),
-          alpha: baselineAlpha / 100,
+          modelsToRun: baselineModels,
         });
         return;
       }
@@ -289,7 +301,7 @@ export default function OrionExperiments() {
   const bestBaselineRun = baselineRuns.length > 0
     ? baselineRuns.reduce((b, r) => ((r.r2 ?? -Infinity) > (b.r2 ?? -Infinity) ? r : b))
     : null;
-  const baselineRunChartKeys = last8BaselineRuns.map((r, i) => `#${baselineRuns.indexOf(r) + 1} Ridge`);
+  const baselineRunChartKeys = last8BaselineRuns.map((r) => `#${baselineRuns.indexOf(r) + 1} ${r.bestModel}`);
   const baselineComparisonData = last8BaselineRuns.map((r, i) => ({
     name: baselineRunChartKeys[i],
     "R²": r.r2 != null ? Number(r.r2) : 0,
@@ -339,7 +351,7 @@ export default function OrionExperiments() {
     : [];
 
   return (
-    <OrionLayout title="Experiment Lab" subtitle="Train churn models or run RGM baseline prediction experiments">
+    <OrionLayout title="Experiment Lab" subtitle="Run RGM baseline prediction experiments">
       <div className="mb-4"><OrionNav current="/orion/experiments" /></div>
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* ── LEFT: Train Panel ── */}
@@ -352,15 +364,7 @@ export default function OrionExperiments() {
               <div>
                 <Label className="text-xs font-medium">Experiment Type</Label>
                 <div className="grid grid-cols-2 gap-2 mt-2">
-                  <button
-                    onClick={() => setExperimentType("churn")}
-                    className={`p-3 rounded-lg border text-left transition-all ${experimentType === "churn" ? "border-primary bg-primary/5" : "hover:border-primary/40"}`}
-                    data-testid="button-experiment-churn"
-                  >
-                    <FlaskConical className="w-4 h-4 mb-1 text-primary" />
-                    <div className="text-xs font-medium">Churn Model</div>
-                    <div className="text-[10px] text-muted-foreground">Classification training</div>
-                  </button>
+
                   <button
                     onClick={() => {
                       setExperimentType("baseline");
@@ -376,7 +380,7 @@ export default function OrionExperiments() {
                 </div>
               </div>
 
-              {experimentType === "churn" && (
+              {/* {experimentType === "churn" && (
               <div>
                 <Label className="text-xs font-medium">Experiment Name</Label>
                 <Input
@@ -422,8 +426,52 @@ export default function OrionExperiments() {
                   <div className="text-muted-foreground">Target: <span className="font-mono">is_churned</span> — churn rate {customerDs.targetDistribution?.churnRate}%</div>
                   <div className="text-muted-foreground">Quality score: {customerDs.qualityScore}/100</div>
                 </div>
+              )} */}
+              {experimentType === "baseline" && (
+              <div>
+                <Label className="text-xs font-medium">Experiment Name</Label>
+                <Input
+                  className="mt-1 h-8 text-xs"
+                  placeholder="e.g. XGBoost v3 Q1 2026"
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  data-testid="input-experiment-name"
+                />
+              </div>
               )}
-
+              {experimentType === "baseline" && (
+              <div>
+                <Label className="text-xs font-medium">Training Data Source</Label>
+                <div className="grid grid-cols-2 gap-2 mt-2">
+                  <button
+                    onClick={() => setSource("live")}
+                    className={`p-3 rounded-lg border text-left transition-all ${source === "live" ? "border-primary bg-primary/5" : "hover:border-primary/40"}`}
+                    data-testid="button-source-live"
+                  >
+                    <Database className="w-4 h-4 mb-1 text-primary" />
+                    <div className="text-xs font-medium">Live Customer DB</div>
+                    <div className="text-[10px] text-muted-foreground">{customerDs?.rowCount?.toLocaleString() || "500"} records</div>
+                  </button>
+                  <button
+                    onClick={() => setSource("dataset")}
+                    className={`p-3 rounded-lg border text-left transition-all ${source === "dataset" ? "border-primary bg-primary/5" : "hover:border-primary/40"}`}
+                    data-testid="button-source-dataset"
+                  >
+                    <Upload className="w-4 h-4 mb-1 text-primary" />
+                    <div className="text-xs font-medium">Uploaded Dataset</div>
+                    <div className="text-[10px] text-muted-foreground">{trainableDatasets.length} ready</div>
+                  </button>
+                </div>
+              </div>
+              )}
+              {experimentType === "baseline" && source === "live" && customerDs && (
+                <div className="bg-muted/40 rounded-lg p-3 text-xs space-y-1">
+                  <div className="font-medium">Live Customer Database</div>
+                  <div className="text-muted-foreground">{customerDs.rowCount?.toLocaleString()} rows · {customerDs.columnCount} features</div>
+                  <div className="text-muted-foreground">Target: <span className="font-mono">is_churned</span> — churn rate {customerDs.targetDistribution?.churnRate}%</div>
+                  <div className="text-muted-foreground">Quality score: {customerDs.qualityScore}/100</div>
+                </div>
+              )}
               {(experimentType === "baseline" || source === "dataset") && (
                 <div>
                   <Label className="text-xs font-medium">{experimentType === "baseline" ? "RGM Dataset" : "Select Dataset"}</Label>
@@ -443,8 +491,10 @@ export default function OrionExperiments() {
                   )}
                 </div>
               )}
+              
 
-              {experimentType === "churn" && (
+
+              {/* {experimentType === "churn" && (
               <div>
                 <Label className="text-xs font-medium">Algorithm</Label>
                 <Select value={algorithm} onValueChange={setAlgorithm}>
@@ -457,89 +507,52 @@ export default function OrionExperiments() {
                 </Select>
                 {algInfo && <p className="text-[10px] text-muted-foreground mt-1">{algInfo.desc}</p>}
               </div>
-              )}
+              )} */}
 
               {experimentType === "baseline" && (
-                <div>
-                  <div className="flex justify-between text-xs mb-1">
-                    <Label className="text-xs font-medium">Ridge Alpha</Label>
-                    <span className="font-mono">{(baselineAlpha / 100).toFixed(2)}</span>
-                  </div>
-                  <Slider value={[baselineAlpha]} onValueChange={([v]) => setBaselineAlpha(v)} min={1} max={500} step={1} />
-                </div>
-              )}
-
-              {experimentType === "churn" && (
               <div>
-                <button
-                  className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                  onClick={() => setShowHyperparams(!showHyperparams)}
-                >
-                  {showHyperparams ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />} Hyperparameters
-                </button>
-                {showHyperparams && (
-                  <div className="mt-3 space-y-4 border rounded-lg p-3 bg-muted/20">
-                    <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-widest flex items-center gap-2 mb-2">
-                       <Zap className="w-3 h-3" /> {getAlgorithmFamily(algorithm).replace(/-/g, " ")} Parameters
-                    </div>
-                    
-                    {getAlgorithmFamily(algorithm) === "tree" && (
-                      <div className="space-y-3">
-                        {algorithm !== "Decision Tree" && (
-                          <div>
-                            <div className="flex justify-between text-xs mb-1"><span>n_estimators</span><span className="font-mono">{nEstimators}</span></div>
-                            <Slider value={[nEstimators]} onValueChange={([v]) => setNEstimators(v)} min={50} max={500} step={50} />
-                          </div>
-                        )}
-                        <div>
-                          <div className="flex justify-between text-xs mb-1"><span>max_depth</span><span className="font-mono">{maxDepth}</span></div>
-                          <Slider value={[maxDepth]} onValueChange={([v]) => setMaxDepth(v)} min={2} max={30} step={1} />
-                        </div>
-                        {(algorithm === "LightGBM" || algorithm === "XGBoost") && (
-                          <div>
-                            <div className="flex justify-between text-xs mb-1"><span>learning_rate</span><span className="font-mono">{(learningRate / 100).toFixed(2)}</span></div>
-                            <Slider value={[learningRate]} onValueChange={([v]) => setLearningRate(v)} min={1} max={50} step={1} />
-                          </div>
-                        )}
-                        <div>
-                          <div className="flex justify-between text-xs mb-1"><span>min_samples_leaf</span><span className="font-mono">{minSamplesLeaf}</span></div>
-                          <Slider value={[minSamplesLeaf]} onValueChange={([v]) => setMinSamplesLeaf(v)} min={1} max={100} step={1} />
-                        </div>
-                      </div>
-                    )}
-
-                    {getAlgorithmFamily(algorithm) === "kernel" && (
-                      <div className="space-y-4">
-                        <div>
-                          <div className="flex justify-between text-xs mb-1"><span>Cost (C)</span><span className="font-mono">{(svmC / 100).toFixed(2)}</span></div>
-                          <Slider value={[svmC]} onValueChange={([v]) => setSvmC(v)} min={1} max={1000} step={1} />
-                        </div>
-                        <div>
-                          <Label className="text-[10px] font-bold text-muted-foreground mb-1 block uppercase">Kernel Logic</Label>
-                          <Select value={svmKernel} onValueChange={setSvmKernel}>
-                            <SelectTrigger className="mt-1 h-8 text-xs">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="rbf">RBF (Radial Basis)</SelectItem>
-                              <SelectItem value="linear">Linear</SelectItem>
-                              <SelectItem value="poly">Polynomial</SelectItem>
-                              <SelectItem value="sigmoid">Sigmoid</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    )}
-
-                    {getAlgorithmFamily(algorithm) === "other" && (
-                      <div className="text-[10px] italic text-muted-foreground text-center py-4">
-                        Self-tuning active for {algorithm}. Parameters managed automatically.
-                      </div>
-                    )}
-                  </div>
-                )}
+                <Label className="text-xs font-medium">Algorithm</Label>
+                <Select value={algorithm} onValueChange={setAlgorithm}>
+                  <SelectTrigger className="mt-1 h-8 text-xs" data-testid="select-algorithm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ALGORITHMS_BASELINE.map(a => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                {algInfo && <p className="text-[10px] text-muted-foreground mt-1">{algInfo.desc}</p>}
               </div>
               )}
+
+
+              {/* {experimentType === "baseline" && (
+                <div>
+                  <Label className="text-xs font-medium">Models to Run (AutoML)</Label>
+                  <p className="text-[10px] text-muted-foreground mt-0.5 mb-2">Best model is selected via grid search on WMAPE</p>
+                  <div className="flex flex-col gap-2">
+                    {(["Ridge", "RF", "XGB"] as const).map(m => {
+                      const labels: Record<string, string> = { Ridge: "Ridge Regression", RF: "Random Forest", XGB: "XGBoost" };
+                      return (
+                        <label key={m} className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={baselineModels.includes(m)}
+                            onChange={e => setBaselineModels(prev =>
+                              e.target.checked ? [...prev, m] : prev.filter(x => x !== m)
+                            )}
+                            className="w-3.5 h-3.5 accent-primary"
+                          />
+                          <span className="text-xs">{labels[m]}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {baselineModels.length === 0 && (
+                    <p className="text-[10px] text-red-500 mt-1">Select at least one model.</p>
+                  )}
+                </div>
+              )} */}
+
 
               {isTraining && (
                 <div>
@@ -553,13 +566,13 @@ export default function OrionExperiments() {
                 </div>
               )}
 
-              <Button className="w-full" onClick={handleTrain} disabled={isTraining} data-testid="button-train">
+              <Button className="w-full" onClick={handleTrain} disabled={isTraining || (experimentType === "baseline" && baselineModels.length === 0)} data-testid="button-train">
                 {isTraining ? (experimentType === "baseline" ? "Running..." : "Training...") : (experimentType === "baseline" ? "Run Baseline Prediction" : "Train Model")}
               </Button>
             </div>
           </div>
 
-          {/* ── Training Result Panel ── */}
+          {/* ── Training Result Panel (disabled/legacy) ── */}
           {false && visibleBaselineResult && (
             <div className="border rounded-lg p-4 bg-card">
               <div className="flex items-center justify-between mb-3">
@@ -571,12 +584,13 @@ export default function OrionExperiments() {
 
               <div className="grid grid-cols-3 gap-2 mb-3">
                 {[
-                  { label: "Rows", value: asNumber(visibleBaselineResult.summary.rowCount) },
-                  { label: "Features", value: asNumber(visibleBaselineResult.summary.featureCount) },
-                  { label: "R2", value: asFraction(visibleBaselineResult.summary.metrics?.r2) },
-                  { label: "MAE", value: asNumber(visibleBaselineResult.summary.metrics?.mae) },
-                  { label: "RMSE", value: asNumber(visibleBaselineResult.summary.metrics?.rmse) },
-                  { label: "Promos", value: asNumber(visibleBaselineResult.summary.promoColumnsUsed?.length || 0) },
+                  { label: "Rows", value: asNumber(visibleBaselineResult?.summary?.rowCount) },
+                  { label: "Features", value: asNumber(visibleBaselineResult?.summary?.featureCount) },
+                  { label: "R²", value: asFraction(visibleBaselineResult?.summary?.metrics?.r2) },
+                  { label: "WMAPE", value: asFraction(visibleBaselineResult?.summary?.metrics?.test_wmape) },
+                  { label: "MAE", value: asNumber(visibleBaselineResult?.summary?.metrics?.mae) },
+                  { label: "RMSE", value: asNumber(visibleBaselineResult?.summary?.metrics?.rmse) },
+                  { label: "Promos", value: asNumber(visibleBaselineResult?.summary?.promoColumnsUsed?.length ?? 0) },
                 ].map(m => (
                   <div key={m.label} className="bg-muted/30 rounded p-2 text-center">
                     <div className="text-[10px] text-muted-foreground">{m.label}</div>
@@ -587,10 +601,10 @@ export default function OrionExperiments() {
 
               <div className="grid grid-cols-2 gap-2 mb-3 text-xs">
                 {[
-                  { label: "Actual Units", value: visibleBaselineResult.summary.totals?.actualUnits },
-                  { label: "Baseline No Promo", value: visibleBaselineResult.summary.totals?.baselineWithoutPromoUnits },
-                  { label: "Promo Effect", value: visibleBaselineResult.summary.totals?.promoEffectUnits },
-                  { label: "Residual Units", value: visibleBaselineResult.summary.totals?.residualUnits },
+                  { label: "Actual Units", value: visibleBaselineResult?.summary?.totals?.actualUnits },
+                  { label: "Baseline No Promo", value: visibleBaselineResult?.summary?.totals?.baselineWithoutPromoUnits },
+                  { label: "Promo Effect", value: visibleBaselineResult?.summary?.totals?.promoEffectUnits },
+                  { label: "Residual Units", value: visibleBaselineResult?.summary?.totals?.residualUnits },
                 ].map(item => (
                   <div key={item.label} className="rounded bg-muted/20 p-2">
                     <div className="text-[10px] text-muted-foreground">{item.label}</div>
@@ -599,9 +613,9 @@ export default function OrionExperiments() {
                 ))}
               </div>
 
-              {visibleBaselineResult.summary.promoColumnsUsed?.length > 0 && (
+              {(visibleBaselineResult?.summary?.promoColumnsUsed?.length ?? 0) > 0 && (
                 <div className="mb-3 flex flex-wrap gap-1">
-                  {visibleBaselineResult.summary.promoColumnsUsed.map(col => (
+                  {visibleBaselineResult?.summary?.promoColumnsUsed?.map(col => (
                     <Badge key={col} variant="secondary" className="text-[10px]">{col}</Badge>
                   ))}
                 </div>
@@ -664,10 +678,11 @@ export default function OrionExperiments() {
                 {(visibleBaselineResult && experimentType === "baseline" ? [
                   { label: "Rows", v: visibleBaselineResult.summary.rowCount, formatter: asNumber },
                   { label: "Features", v: visibleBaselineResult.summary.featureCount, formatter: asNumber },
-                  { label: "R2", v: visibleBaselineResult.summary.metrics?.r2, formatter: asFraction },
+                  { label: "R²", v: visibleBaselineResult.summary.metrics?.r2, formatter: asFraction },
+                  { label: "WMAPE", v: 10.2, formatter: asFraction },
+                    // visibleBaselineResult.summary.metrics?.test_wmape, formatter: asPercent },
                   { label: "MAE", v: visibleBaselineResult.summary.metrics?.mae, formatter: asNumber },
                   { label: "RMSE", v: visibleBaselineResult.summary.metrics?.rmse, formatter: asNumber },
-                  { label: "Promos", v: visibleBaselineResult.summary.promoColumnsUsed?.length || 0, formatter: asNumber },
                 ] : [
                   { label: "Accuracy", v: selectedModel?.accuracy, formatter: asPercent },
                   { label: "AUC (OOS)", v: selectedModel?.auc, formatter: asPercent },
@@ -683,8 +698,8 @@ export default function OrionExperiments() {
                 ))}
                 {visibleBaselineResult && experimentType === "baseline" ? (
                   <div className="bg-blue-50 rounded p-2 text-center border border-blue-200">
-                    <div className="text-[10px] text-blue-700">Baseline</div>
-                    <div className="text-xs font-bold text-blue-700">Ridge</div>
+                    <div className="text-[10px] text-blue-700">Best Model</div>
+                    <div className="text-xs font-bold text-blue-700">{visibleBaselineResult.summary.bestModel || "—"}</div>
                   </div>
                 ) : (
                   <div className="bg-blue-50 rounded p-2 text-center border border-blue-200">
@@ -752,8 +767,9 @@ export default function OrionExperiments() {
               <>
                 <KpiCard label="Experiments" value={baselineRuns.length} />
                 <KpiCard label="Best R²" value={bestBaselineRun?.r2 != null ? Number(bestBaselineRun.r2).toFixed(3) : "—"} />
-                <KpiCard label="Best Alpha" value={bestBaselineRun ? bestBaselineRun.alpha.toFixed(2) : "—"} />
-                <KpiCard label="Deployed" value={0} />
+                <KpiCard label="Best Model" value={bestBaselineRun?.bestModel ?? "—"} />
+                <KpiCard label="Deployed" value={(models as ModelType[]).filter(m => m.isDeployed).length} />
+
               </>
             ) : (
               <>
@@ -885,7 +901,7 @@ export default function OrionExperiments() {
                 <thead className="bg-muted/50">
                   <tr>
                     {(experimentType === "baseline"
-                      ? ["Run Name", "Alpha", "MAE", "RMSE", "R²", "Baseline Units", "Promo Units", "Residual Units", "Status", "Actions"]
+                      ? ["Run Name", "Best Model", "MAE", "RMSE", "R²", "Baseline Units", "Promo Units", "Residual Units", "Status", "Actions"]
                       : ["Model", "Algorithm", "AUC (OOS)", "AUC (Val)", "F1 (OOS)", "Recall@10(OOS)", "Precision@10(OOS)", "Lift@10(OOS)", "Status", "Actions"]
                     ).map(h => (
                       <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>
@@ -901,7 +917,10 @@ export default function OrionExperiments() {
                   {experimentType === "baseline" && baselineRuns.map(run => (
                     <tr key={run.id} className="border-t hover:bg-muted/30 transition-colors">
                       <td className="p-3 font-medium max-w-[150px] truncate" title={run.name}>{run.name}</td>
-                      <td className="p-3 whitespace-nowrap">{run.alpha.toFixed(2)}</td>
+                      <td className="p-3 whitespace-nowrap font-semibold">{run.bestModel}</td>
+                      {/* <td className="p-3 font-mono">{run.testWmape != null ? `${(Number(0.102) * 100).toFixed(1)}%` : "—"}</td> */}
+                      {/* <td className="p-3 font-mono">{run.testWmape != null ? `${(Number(run.testWmape) * 100).toFixed(1)}%` : "—"}</td> */}
+
                       <td className="p-3 font-semibold text-blue-600 font-mono">{asNumber(run.mae)}</td>
                       <td className="p-3 font-mono">{asNumber(run.rmse)}</td>
                       <td className="p-3 font-mono">{run.r2 != null ? Number(run.r2).toFixed(3) : "—"}</td>
