@@ -7,13 +7,15 @@ from services.custom_features import get_dataset_rows
 
 router = APIRouter(prefix="/api/orion", tags=["orion"])
 
+USE_CASE = "tmt_customer_churn"
+
 
 @router.get("/overview")
 def orion_overview(db: Session = Depends(get_db)):
-    models = storage.get_ml_models(db)
+    models = storage.get_ml_models(db, use_case=USE_CASE)
     datasets = storage.get_datasets(db)
     customers = storage.get_customers(db)
-    predictions = storage.get_predictions(db)
+    predictions = storage.get_predictions(db, use_case=USE_CASE)
     recs = storage.get_recommendations(db)
 
     deployed = [m for m in models if m.is_deployed]
@@ -88,7 +90,7 @@ def risk_distribution(
     model_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    predictions = storage.get_predictions(db, model_id)
+    predictions = storage.get_predictions(db, model_id, use_case=USE_CASE)
     if not predictions:
         customers = storage.get_customers(db)
         distribution = {"veryHigh": 0, "high": 0, "medium": 0, "low": 0}
@@ -137,7 +139,7 @@ def customer_dataset(db: Session = Depends(get_db)):
 
 @router.get("/governance")
 def governance(db: Session = Depends(get_db)):
-    models = storage.get_ml_models(db)
+    models = storage.get_ml_models(db, use_case=USE_CASE)
     audit = storage.get_audit_log(db, 100)
 
     approved = [m for m in models if m.approval_status == "approved"]

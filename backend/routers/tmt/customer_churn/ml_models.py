@@ -19,6 +19,8 @@ from services.custom_features import (
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 
+USE_CASE = "tmt_customer_churn"
+
 ALGORITHM_MAP = {
     "Gradient Boosting": "XGBoost",
     "Neural Network": "Random Forest",
@@ -162,12 +164,12 @@ def _generate_predictions_for_model(
 
 @router.get("")
 def list_models(db: Session = Depends(get_db)):
-    return storage.get_ml_models(db)
+    return storage.get_ml_models(db, use_case=USE_CASE)
 
 
 @router.get("/latest/features")
 def latest_features(dataset_id: int | None = Query(None), db: Session = Depends(get_db)):
-    models = storage.get_ml_models(db)
+    models = storage.get_ml_models(db, use_case=USE_CASE)
     if dataset_id:
         models = [m for m in models if m.dataset_id == dataset_id]
     if not models:
@@ -219,6 +221,7 @@ def train_model(body: TrainRequest, db: Session = Depends(get_db)):
         "name": model_name,
         "dataset_id": body.dataset_id,
         "algorithm": f"Auto ({best_model})" if body.algorithm == "Auto" else body.algorithm,
+        "use_case": USE_CASE,
         "status": "trained",
         "accuracy": metrics.get("accuracy"),
         "precision": metrics.get("precision"),
@@ -306,6 +309,7 @@ def train_live(body: TrainLiveRequest, db: Session = Depends(get_db)):
         "name": body.name or f"{body.algorithm} (Live) - {datetime.now(timezone.utc).date()}",
         "dataset_id": ds.id,
         "algorithm": body.algorithm,
+        "use_case": USE_CASE,
         "status": "trained",
         "accuracy": metrics.get("accuracy"),
         "precision": metrics.get("precision"),
@@ -333,7 +337,7 @@ def deploy_model(model_id: int, db: Session = Depends(get_db)):
     model = storage.get_ml_model(db, model_id)
     if not model:
         raise HTTPException(status_code=404, detail="Model not found")
-    all_models = storage.get_ml_models(db)
+    all_models = storage.get_ml_models(db, use_case=USE_CASE)
     for m in all_models:
         if m.is_deployed:
             storage.update_ml_model(db, m.id, {"is_deployed": False, "deployed_at": None})

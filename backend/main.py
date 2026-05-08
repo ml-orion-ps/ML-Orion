@@ -96,6 +96,15 @@ def _run_migrations():
         "ALTER TABLE model_evaluation_runs ADD COLUMN IF NOT EXISTS score_histogram JSONB",
         "ALTER TABLE model_evaluation_runs ADD COLUMN IF NOT EXISTS top_feature_shap_summary JSONB",
         "ALTER TABLE model_evaluation_runs ADD COLUMN IF NOT EXISTS has_labels BOOLEAN",
+        "ALTER TABLE ml_models ADD COLUMN IF NOT EXISTS use_case VARCHAR(100)",
+        "ALTER TABLE ml_models ADD COLUMN IF NOT EXISTS wmape REAL",
+        "ALTER TABLE ml_models ADD COLUMN IF NOT EXISTS mae REAL",
+        "ALTER TABLE ml_models ADD COLUMN IF NOT EXISTS rmse REAL",
+        "ALTER TABLE ml_models ADD COLUMN IF NOT EXISTS r2 REAL",
+        "ALTER TABLE ml_models ADD COLUMN IF NOT EXISTS promo_effect_units REAL",
+        "ALTER TABLE ml_models ADD COLUMN IF NOT EXISTS baseline_units REAL",
+        "ALTER TABLE ml_models ADD COLUMN IF NOT EXISTS residual_units REAL",
+        "ALTER TABLE ml_models ADD COLUMN IF NOT EXISTS row_count INTEGER",
     ]
     with engine.connect() as conn:
         for sql in migrations:

@@ -3,8 +3,8 @@ import gzip, base64, io, uuid, math
 from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 import pandas as pd
-import numpy as np
 from database import get_db
 import storage
 
@@ -20,6 +20,7 @@ def _sanitize_for_json(obj):
     if isinstance(obj, list):
         return [_sanitize_for_json(i) for i in obj]
     return obj
+
 from schemas import CustomFeatureDefinition
 from services.custom_features import (
     apply_custom_features,
@@ -32,6 +33,8 @@ from services.custom_features import (
 from services.ml_service import run_baseline_prediction
 
 router = APIRouter(prefix="/datasets", tags=["datasets"])
+
+USE_CASE = "cpg_baseline_modelling"
 
 
 def _compress_csv(csv_text: str) -> str:
@@ -261,8 +264,11 @@ def quality_check(dataset_id: int, db: Session = Depends(get_db)):
     return _sanitize_dataset(ds_updated)
 
 
+from .eda import run_eda as _run_eda
+
+
 @router.post("/{dataset_id}/eda")
-def run_eda(dataset_id: int, db: Session = Depends(get_db)):
+def run_eda(dataset_id: int, usecase: str = Query("churn"), db: Session = Depends(get_db)):
     ds = storage.get_dataset(db, dataset_id)
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
@@ -272,282 +278,30 @@ def run_eda(dataset_id: int, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Dataset has no data rows")
 
     df = pd.DataFrame(rows)
-    df = df.where(pd.notnull(df), None)
 
-    numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
-    cat_cols = [c for c in df.select_dtypes(exclude=[np.number]).columns.tolist()]
-    target_col = next((c for c in ["is_churned", "isChurned", "churned", "label", "target"] if c in df.columns), None)
-    n = len(df)
+    try:
+        eda_report = _run_eda(usecase, df)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"EDA computation failed: {exc}") from exc
 
-    # Overview
-    churned_n = 0
-    if target_col:
-        churned_n = int(df[target_col].apply(lambda x: x in (1, True, "1", "true")).sum())
-    overview = {
-        "totalRows": n,
-        "churnedRows": churned_n,
-        "retainedRows": n - churned_n,
-        "churnRate": round(churned_n / max(n, 1) * 100, 1),
-        "features": len(df.columns),
-        "numericFeatures": len(numeric_cols),
-        "categoricalFeatures": len(cat_cols),
-    }
+    old_report = ds.eda_report if isinstance(ds.eda_report, dict) else {}
+    # Build a brand-new dict — never mutate ds.eda_report in-place,
+    # otherwise SQLAlchemy's JSON column dirty-check sees the same object
+    # and skips the SQL UPDATE entirely.
+    new_report = {usecase: _sanitize_for_json(eda_report)}
+    for k, v in old_report.items():
+        if k != usecase:  # keep any other use-case results
+            new_report[k] = v
 
-    # numericStats
-    churn_mask = None
-    if target_col:
-        churn_mask = df[target_col].apply(lambda x: x in (1, True, "1", "true"))
+    ds.eda_report = new_report
+    ds.status = "analyzed"
+    flag_modified(ds, "eda_report")  # force SQLAlchemy to issue the UPDATE
+    db.commit()
+    db.refresh(ds)
+   
+    print(f"[EDA] Saved for dataset {dataset_id}, usecase={usecase}, keys={list(ds.eda_report.keys())}")
 
-    numeric_stats: dict = {}
-    for col in numeric_cols[:40]:
-        if col == target_col:
-            continue
-        series = df[col].dropna().astype(float)
-        if len(series) == 0:
-            continue
-        completeness = round((1 - df[col].isna().sum() / max(n, 1)) * 100, 1)
-        hist_vals, edges = np.histogram(series, bins=15)
-        histogram = [
-            {"label": f"{edges[i]:.1f}–{edges[i+1]:.1f}", "count": int(hist_vals[i])}
-            for i in range(len(hist_vals))
-        ]
-        churn_mean = retained_mean = None
-        if churn_mask is not None:
-            try:
-                aligned = series[series.index.isin(churn_mask[churn_mask].index)]
-                churn_mean = round(float(aligned.mean()), 3) if len(aligned) else None
-                ret = series[series.index.isin(churn_mask[~churn_mask].index)]
-                retained_mean = round(float(ret.mean()), 3) if len(ret) else None
-            except Exception:
-                pass
-        q1 = float(series.quantile(0.25)) if len(series) > 3 else None
-        q3 = float(series.quantile(0.75)) if len(series) > 3 else None
-        numeric_stats[col] = {
-            "mean": round(float(series.mean()), 3),
-            "median": round(float(series.median()), 3),
-            "stdDev": round(float(series.std()), 3) if len(series) > 1 else 0,
-            "min": float(series.min()),
-            "max": float(series.max()),
-            "q1": round(q1, 3) if q1 is not None else None,
-            "q3": round(q3, 3) if q3 is not None else None,
-            "nullCount": int(df[col].isna().sum()),
-            "completeness": completeness,
-            "churnMean": churn_mean,
-            "retainedMean": retained_mean,
-            "histogram": histogram,
-        }
-
-    # catStats
-    cat_stats: dict = {}
-    for col in cat_cols[:30]:
-        if col == target_col:
-            continue
-        counts = df[col].value_counts().head(15)
-        top = []
-        for val, cnt in counts.items():
-            churn_cnt = 0
-            if churn_mask is not None:
-                try:
-                    churn_cnt = int(df[churn_mask & (df[col] == val)].shape[0])
-                except Exception:
-                    pass
-            top.append({"label": str(val), "count": int(cnt), "churnCount": churn_cnt})
-        cat_stats[col] = {
-            "nullCount": int(df[col].isna().sum()),
-            "uniqueCount": int(df[col].nunique()),
-            "top": top,
-        }
-
-    # bivariate
-    credit_col  = next((c for c in ["credit_profile", "creditProfile", "credit_score_band", "credit_segment"] if c in df.columns), None)
-    # loyalty_status preferred; fallback to value_tier / segment
-    loyalty_col = next((c for c in ["loyalty_status", "loyaltyStatus", "value_tier", "valueTier", "segment"] if c in df.columns), None)
-    # bill_amount preferred for revenue; fallback to monthly_revenue
-    bill_col    = next((c for c in ["bill_amount", "billAmount", "monthly_revenue", "monthlyRevenue", "revenue"] if c in df.columns), None)
-    acct_col    = next((c for c in ["account_number", "accountNumber"] if c in df.columns), None)
-    snap_col    = next((c for c in ["snapshot_month", "snapshotMonth"] if c in df.columns), None)
-
-    def _avg_monthly_revenue(grp: "pd.DataFrame") -> float:
-        """sum(bill_amount) / num_snapshot_months per account, then averaged across accounts."""
-        if bill_col is None or bill_col not in grp.columns:
-            return 0.0
-        try:
-            if acct_col and acct_col in grp.columns and snap_col and snap_col in grp.columns:
-                per_acct = (
-                    grp.groupby(acct_col)
-                    .apply(lambda a: a[bill_col].dropna().astype(float).sum()
-                                     / max(a[snap_col].nunique(), 1))
-                )
-                return round(float(per_acct.mean()), 2)
-            # fallback: simple mean of bill_amount
-            return round(float(grp[bill_col].dropna().astype(float).mean()), 2)
-        except Exception:
-            return 0.0
-
-    risk_category_data: list[dict] = []
-    if credit_col and target_col:
-        for val in df[credit_col].dropna().unique():
-            grp = df[df[credit_col] == val]
-            ch = grp[target_col].apply(lambda x: x in (1, True, "1", "true")).sum()
-            risk_category_data.append({
-                "label": str(val),
-                "total": len(grp),
-                "churned": int(ch),
-                "churnRate": round(int(ch) / max(len(grp), 1) * 100, 1),
-            })
-
-    value_tier_data: list[dict] = []
-    if loyalty_col and target_col:
-        for val in df[loyalty_col].dropna().unique():
-            grp = df[df[loyalty_col] == val]
-            ch = grp[target_col].apply(lambda x: x in (1, True, "1", "true")).sum()
-            value_tier_data.append({
-                "label": str(val),
-                "total": len(grp),
-                "count": len(grp),
-                "churned": int(ch),
-                "churnRate": round(int(ch) / max(len(grp), 1) * 100, 1),
-                "avgRevenue": _avg_monthly_revenue(grp),
-            })
-
-    # multivariate — group by loyalty_status only (contract_status dropped)
-    multivariate: list[dict] = []
-    if loyalty_col and target_col:
-        for loyalty in df[loyalty_col].dropna().unique()[:8]:
-            grp = df[df[loyalty_col] == loyalty]
-            if len(grp) == 0:
-                continue
-            ch = grp[target_col].apply(lambda x: x in (1, True, "1", "true")).sum()
-            multivariate.append({
-                "valueTier": str(loyalty),
-                "total": len(grp),
-                "churned": int(ch),
-                "churnRate": round(int(ch) / max(len(grp), 1) * 100, 1),
-                "avgRevenue": _avg_monthly_revenue(grp),
-            })
-
-    # timeTrends (tenure cohorts)
-    tenure_col = next((c for c in ["tenure_months", "tenureMonths", "tenure"] if c in df.columns), None)
-    time_trends: list[dict] = []
-    if tenure_col and target_col:
-        buckets = [("0-6 mo", 0, 6), ("6-12 mo", 6, 12), ("12-24 mo", 12, 24), ("24-48 mo", 24, 48), ("48+ mo", 48, 9999)]
-        for label, lo, hi in buckets:
-            try:
-                grp = df[(df[tenure_col].astype(float) >= lo) & (df[tenure_col].astype(float) < hi)]
-            except Exception:
-                continue
-            ch = grp[target_col].apply(lambda x: x in (1, True, "1", "true")).sum()
-            time_trends.append({
-                "bucket": label, "total": len(grp), "churned": int(ch),
-                "churnRate": round(int(ch) / max(len(grp), 1) * 100, 1),
-                "avgRevenue": _avg_monthly_revenue(grp),
-            })
-
-    # correlationMatrix
-    correlation_matrix: list[dict] = []
-    if len(numeric_cols) > 1:
-        try:
-            corr_df = df[numeric_cols].corr()
-            for i, c1 in enumerate(numeric_cols):
-                for c2 in numeric_cols[i + 1:]:
-                    val = corr_df.loc[c1, c2]
-                    if math.isnan(val) or math.isinf(val):
-                        continue
-                    if abs(val) > 0.2:
-                        correlation_matrix.append({"col1": c1, "col2": c2, "corr": round(float(val), 3)})
-            correlation_matrix.sort(key=lambda x: -abs(x["corr"]))
-        except Exception:
-            pass
-
-    # Legacy correlations: {feature, corr} for target-correlation display
-    legacy_correlations = []
-    if target_col and numeric_stats:
-        for col, stats in list(numeric_stats.items())[:20]:
-            if col == target_col:
-                continue
-            # Approximate feature-target correlation from churnMean vs retainedMean
-            cm = stats.get("churnMean") or 0
-            rm = stats.get("retainedMean") or 0
-            std = stats.get("stdDev") or 1
-            approx_corr = round((cm - rm) / max(std, 0.001), 3) if std else 0
-            approx_corr = max(-1.0, min(1.0, approx_corr))
-            legacy_correlations.append({"feature": col, "corr": approx_corr, "correlation": approx_corr})
-        legacy_correlations.sort(key=lambda x: -abs(x["corr"]))
-
-    # Distributions: flat format with {feature, mean, median, stdDev, min, max, skewness}
-    legacy_distributions = [
-        {
-            "feature": col,
-            "mean": stats["mean"], "median": stats["median"],
-            "stdDev": stats["stdDev"], "min": stats["min"], "max": stats["max"],
-            "skewness": 0,  # skewness not stored in numericStats
-            "histogram": stats.get("histogram", []),
-        }
-        for col, stats in list(numeric_stats.items())[:20]
-    ]
-
-    # dataRisks
-    class_imbalance = round(churned_n / max(n, 1) * 100, 1)
-    duplicates = int(df.duplicated().sum())
-    null_risks = [
-        {"column": col, "nullCount": int(df[col].isna().sum()), "nullPercent": round(df[col].isna().sum() / max(n, 1) * 100, 1)}
-        for col in df.columns if df[col].isna().sum() > 0
-    ]
-    outlier_cols = []
-    low_variance = []
-    for col in numeric_cols[:20]:
-        series = df[col].dropna().astype(float)
-        if len(series) < 4:
-            continue
-        q1_v, q3_v = series.quantile(0.25), series.quantile(0.75)
-        iqr = q3_v - q1_v
-        outlier_n = int(((series < q1_v - 1.5 * iqr) | (series > q3_v + 1.5 * iqr)).sum())
-        if outlier_n > n * 0.05:
-            outlier_cols.append({"column": col, "outlierCount": outlier_n, "percent": round(outlier_n / n * 100, 1)})
-        if series.std() < 0.001:
-            low_variance.append({"column": col, "std": round(float(series.std()), 6)})
-
-    # insights
-    tenure_time_col = next((c for c in ["snapshot_month", "snapshotMonth", "date", "tenure_months"] if c in df.columns), None)
-    insights: list[str] = []
-    if target_col:
-        insights.append(f"Target column detected as {target_col}. {round(churned_n / max(n, 1) * 100, 1)}% of sample rows are positive.")
-    else:
-        insights.append("No target column was detected automatically. Please verify the label field.")
-    if null_risks:
-        insights.append(f"Missing values found in {len(null_risks)} columns. Consider cleaning or imputing these fields.")
-    if duplicates > 0:
-        insights.append(f"{duplicates} duplicate sample rows were detected.")
-    if correlation_matrix:
-        top = correlation_matrix[0]
-        insights.append(f"Strong relationship found between {top['col1']} and {top['col2']} (corr {top['corr']}).")
-    if time_trends and tenure_time_col:
-        insights.append(f"Time trends were generated using {tenure_time_col}.")
-
-    eda_report = {
-        "targetColumn": target_col,
-        "overview": overview,
-        "numericStats": numeric_stats,
-        "catStats": cat_stats,
-        "bivariate": {"riskCategory": risk_category_data, "valueTier": value_tier_data},
-        "multivariate": multivariate,
-        "timeTrends": time_trends,
-        "correlationMatrix": correlation_matrix[:30],
-        "dataRisks": {
-            "classImbalance": class_imbalance,
-            "duplicates": duplicates,
-            "nullRisks": null_risks,
-            "outliers": outlier_cols,
-            "lowVariance": low_variance,
-        },
-        "insights": insights,
-        # Legacy keys used by dataset registry view
-        "correlations": legacy_correlations,
-        "distributions": legacy_distributions,
-    }
-
-    ds_updated = storage.update_dataset(db, dataset_id, {"eda_report": _sanitize_for_json(eda_report), "status": "analyzed"})
-    return _sanitize_dataset(ds_updated)
+    return _sanitize_dataset(ds)
 
 
 @router.post("/{dataset_id}/feature-selection")
@@ -561,7 +315,7 @@ def feature_selection(dataset_id: int, body: dict = {}, db: Session = Depends(ge
     cat_cols = [c["name"] for c in cols if c.get("type") == "categorical"]
 
     exclude = {"id", "account_number", "accountNumber", "customer_id", "customerId", "name", "created_at"}
-    target_candidates = ["is_churned", "isChurned", "churned", "label", "target"]
+    target_candidates = ["sales_units"]
 
     target = next((c for c in target_candidates if any(col["name"] == c for col in cols)), None)
     features = [c for c in numeric_cols if c not in exclude and c != target]
@@ -596,109 +350,40 @@ def baseline_prediction(dataset_id: int, body: dict = {}, db: Session = Depends(
     feature_report = ds.feature_report or {}
     if not isinstance(feature_report, dict):
         feature_report = {}
+    summary = result.get("summary", {})
     feature_report["baselinePrediction"] = {
-        "summary": result.get("summary", {}),
+        "summary": summary,
         "preview": (result.get("predictions") or [])[:50],
     }
     storage.update_dataset(db, dataset_id, {"feature_report": _sanitize_for_json(feature_report)})
 
-    return result
-
-
-@router.post("/{dataset_id}/promo-uplift")
-def promo_uplift_endpoint(dataset_id: int, body: dict = {}, db: Session = Depends(get_db)):
-    ds = storage.get_dataset(db, dataset_id)
-    if not ds:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-
-    rows = get_dataset_rows(ds)
-    if not rows:
-        raise HTTPException(status_code=400, detail="Dataset has no data rows")
-
-    try:
-        alpha = float(body.get("alpha", 1.0))
-    except (TypeError, ValueError):
-        alpha = 1.0
-
-    promo_cols = body.get("promoCols") or None
-
-    result = run_baseline_prediction(rows, alpha=alpha, promo_cols=promo_cols)
-    if not result.get("success"):
-        raise HTTPException(status_code=500, detail=result.get("error", "Promo uplift failed"))
-
-    feature_report = ds.feature_report or {}
-    if not isinstance(feature_report, dict):
-        feature_report = {}
-    feature_report["promoUplift"] = {
-        "summary": result.get("summary", {}),
-        "preview": (result.get("predictions") or [])[:50],
-    }
-    storage.update_dataset(db, dataset_id, {"feature_report": _sanitize_for_json(feature_report)})
+    best_model = summary.get("bestModel", models_to_run[0] if models_to_run else "Ridge")
+    metrics = summary.get("metrics", {})
+    totals = summary.get("totals", {})
+    storage.create_ml_model(db, {
+        "name": f"Baseline - {ds.name} - {best_model}",
+        "dataset_id": dataset_id,
+        "algorithm": best_model,
+        "use_case": USE_CASE,
+        "status": "trained",
+        "hyperparameters": _sanitize_for_json(summary.get("bestParams") or {}),
+        "feature_importance": [],
+        "confusion_matrix": {},
+        "model_weights": _sanitize_for_json({"modelsRun": models_to_run}),
+        "is_deployed": False,
+        "wmape": metrics.get("test_wmape"),
+        "mae": metrics.get("mae"),
+        "rmse": metrics.get("rmse"),
+        "r2": metrics.get("r2"),
+        "promo_effect_units": totals.get("promoEffectUnits"),
+        "baseline_units": totals.get("baselineWithoutPromoUnits"),
+        "residual_units": totals.get("residualUnits"),
+        "row_count": summary.get("rowCount"),
+    })
 
     return result
-
-
-@router.post("/{dataset_id}/promo-roi")
-def promo_roi_endpoint(dataset_id: int, body: dict = {}, db: Session = Depends(get_db)):
-    """
-    Calculate ROI per promo mechanic by combining uplift units with trade spend.
-
-    Body:
-      tradeSpendPerUnit  – { discount_depth: 0.45, feature_flag: 1.20, ... }
-                           cost (in currency units) per active row for each mechanic
-      avgPrice           – average selling price per unit (default 10.0)
-    """
-    ds = storage.get_dataset(db, dataset_id)
-    if not ds:
-        raise HTTPException(status_code=404, detail="Dataset not found")
-
-    feature_report = ds.feature_report or {}
-    if not isinstance(feature_report, dict):
-        feature_report = {}
-
-    uplift_summary = feature_report.get("promoUplift", {}).get("summary", {})
-    if not uplift_summary:
-        raise HTTPException(
-            status_code=400,
-            detail="Run promo-uplift first before computing ROI",
-        )
-
-    promo_summary = uplift_summary.get("promoSummary", {})
-    trade_spend: dict = body.get("tradeSpendPerUnit", {})
-
-    try:
-        avg_price = float(body.get("avgPrice", 10.0))
-    except (TypeError, ValueError):
-        avg_price = 10.0
-
-    roi_results: dict = {}
-    for mechanic, stats in promo_summary.items():
-        total_uplift_units = float(stats.get("totalUpliftUnits") or 0)
-        active_rows = int(stats.get("activeRows") or 1)
-        avg_pct_uplift = stats.get("avgPctUplift")
-
-        incremental_revenue = total_uplift_units * avg_price
-        cost_per_unit = float(trade_spend.get(mechanic, 0))
-        total_cost = cost_per_unit * active_rows
-        roi = round(incremental_revenue / total_cost, 3) if total_cost > 0 else None
-
-        roi_results[mechanic] = {
-            "activeRows": active_rows,
-            "totalUpliftUnits": round(total_uplift_units, 2),
-            "avgPctUplift": avg_pct_uplift,
-            "incrementalRevenue": round(incremental_revenue, 2),
-            "totalCost": round(total_cost, 2),
-            "roi": roi,
-        }
-
-    feature_report["promoRoi"] = roi_results
-    storage.update_dataset(db, dataset_id, {"feature_report": _sanitize_for_json(feature_report)})
-
-    return {"success": True, "roiResults": roi_results}
-
 
 # Custom features
-
 @router.get("/{dataset_id}/custom-features")
 def get_custom_features(dataset_id: int, db: Session = Depends(get_db)):
     ds = storage.get_dataset(db, dataset_id)

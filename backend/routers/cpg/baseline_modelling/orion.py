@@ -1,54 +1,34 @@
 from __future__ import annotations
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from database import get_db
 import storage
-from services.custom_features import get_dataset_rows
 
 router = APIRouter(prefix="/orion", tags=["orion"])
+
+USE_CASE = "cpg_baseline_modelling"
 
 
 @router.get("/overview")
 def orion_overview(db: Session = Depends(get_db)):
-    models = storage.get_ml_models(db)
+    models = storage.get_ml_models(db, use_case=USE_CASE)
     datasets = storage.get_datasets(db)
-    customers = storage.get_customers(db)
-    predictions = storage.get_predictions(db)
-    recs = storage.get_recommendations(db)
 
     deployed = [m for m in models if m.is_deployed]
-    active = [c for c in customers if not c.is_churned]
-    at_risk = [c for c in active if (c.churn_risk_score or 0) > 0.6]
-    churned = [c for c in customers if c.is_churned]
 
-    completed_recs = [r for r in recs if r.status == "completed"]
-    saved_recs = [r for r in completed_recs if r.outcome == "retained"]
-    retention_rate = round(len(saved_recs) / max(len(completed_recs), 1) * 100, 1)
-    rev_at_risk = round(sum(c.monthly_revenue or 0 for c in at_risk) * 12)
-    churn_rate = round(len(churned) / max(len(customers), 1) * 100, 1)
+    deployed_r2s = [m.r2 for m in deployed if m.r2 is not None]
+    avg_r2 = round(sum(deployed_r2s) / len(deployed_r2s), 4) if deployed_r2s else None
 
-    deployed_aucs = [m.auc for m in deployed if m.auc is not None]
-    avg_auc = round(sum(deployed_aucs) / len(deployed_aucs), 4) if deployed_aucs else None
+    deployed_wmapes = [m.wmape for m in deployed if m.wmape is not None]
+    avg_wmape = round(sum(deployed_wmapes) / len(deployed_wmapes), 4) if deployed_wmapes else None
 
-    unique_scored = len(set(p["customer_id"] for p in predictions))
-
-    risk_dist = {"low": 0, "medium": 0, "high": 0, "veryHigh": 0}
-    for c in active:
-        s = c.churn_risk_score or 0
-        if s >= 0.8:
-            risk_dist["veryHigh"] += 1
-        elif s >= 0.6:
-            risk_dist["high"] += 1
-        elif s >= 0.3:
-            risk_dist["medium"] += 1
-        else:
-            risk_dist["low"] += 1
+    total_rows_scored = sum(m.row_count or 0 for m in models)
+    total_promo_effect = round(sum(m.promo_effect_units or 0 for m in models), 2)
 
     model_performance = [
         {
             "id": m.id, "name": m.name, "algorithm": m.algorithm,
-            "accuracy": m.accuracy, "auc": m.auc, "f1": m.f1_score,
-            "precision": m.precision, "recall": m.recall,
+            "r2": m.r2, "wmape": m.wmape, "mae": m.mae, "rmse": m.rmse,
             "isDeployed": m.is_deployed, "trainedAt": m.trained_at,
         }
         for m in models[:6]
@@ -58,26 +38,22 @@ def orion_overview(db: Session = Depends(get_db)):
         "kpis": {
             "totalModels": len(models),
             "deployedModels": len(deployed),
-            "avgAuc": avg_auc,
-            "totalPredictions": len(predictions),
-            "customersScored": unique_scored,
+            "avgR2": avg_r2,
+            "totalRowsScored": total_rows_scored,
             "totalDatasets": len(datasets),
-            "retentionSuccessRate": retention_rate,
-            "revenueAtRisk": rev_at_risk,
+            "avgWmape": avg_wmape,
+            "totalPromoEffectUnits": total_promo_effect,
         },
-        "churnRate": churn_rate,
-        "revenueAtRisk": rev_at_risk,
-        "riskDistribution": risk_dist,
         "modelPerformance": model_performance,
         "activeModel": {
             "id": deployed[0].id, "name": deployed[0].name,
-            "algorithm": deployed[0].algorithm, "auc": deployed[0].auc,
-            "accuracy": deployed[0].accuracy, "f1Score": deployed[0].f1_score,
+            "algorithm": deployed[0].algorithm,
+            "r2": deployed[0].r2, "wmape": deployed[0].wmape,
             "isDeployed": True, "trainedAt": deployed[0].trained_at,
         } if deployed else None,
         "recentModels": [
             {"id": m.id, "name": m.name, "algorithm": m.algorithm,
-             "auc": m.auc, "status": m.status, "trainedAt": m.trained_at}
+             "r2": m.r2, "wmape": m.wmape, "status": m.status, "trainedAt": m.trained_at}
             for m in models[:5]
         ],
     }
@@ -88,7 +64,7 @@ def risk_distribution(
     model_id: int | None = Query(None),
     db: Session = Depends(get_db),
 ):
-    predictions = storage.get_predictions(db, model_id)
+    predictions = storage.get_predictions(db, model_id, use_case=USE_CASE)
     if not predictions:
         customers = storage.get_customers(db)
         distribution = {"veryHigh": 0, "high": 0, "medium": 0, "low": 0}
@@ -137,38 +113,70 @@ def customer_dataset(db: Session = Depends(get_db)):
 
 @router.get("/governance")
 def governance(db: Session = Depends(get_db)):
-    models = storage.get_ml_models(db)
+    models = storage.get_ml_models(db, use_case=USE_CASE)
+    datasets_map = {d.id: d for d in storage.get_datasets(db)}
     audit = storage.get_audit_log(db, 100)
 
+    all_preds = storage.get_predictions(db)
+    pred_count: dict = {}
+    for p in all_preds:
+        mid = p.get("model_id") if isinstance(p, dict) else getattr(p, "model_id", None)
+        if mid is not None:
+            pred_count[mid] = pred_count.get(mid, 0) + 1
+
     approved = [m for m in models if m.approval_status == "approved"]
-    pending = [m for m in models if m.approval_status == "pending"]
+    pending = [m for m in models if m.approval_status in (None, "pending")]
     deployed = [m for m in models if m.is_deployed]
 
+    registry = []
+    for m in models:
+        ds = datasets_map.get(m.dataset_id)
+        cc = {
+            "dataLineage": bool(m.dataset_id),
+            "metricsRecorded": m.r2 is not None or m.wmape is not None,
+            "featureDocumented": bool(m.feature_importance),
+            "hyperparamsLogged": bool(m.hyperparameters),
+        }
+        registry.append({
+            "id": m.id,
+            "name": m.name,
+            "algorithm": m.algorithm,
+            "datasetName": ds.name if ds else "—",
+            "datasetRows": ds.row_count if ds else 0,
+            "r2": m.r2,
+            "wmape": m.wmape,
+            "mae": m.mae,
+            "rmse": m.rmse,
+            "status": m.status,
+            "isDeployed": m.is_deployed,
+            "trainedAt": m.trained_at,
+            "deployedAt": m.deployed_at,
+            "approvalStatus": m.approval_status or "pending",
+            "approvedBy": m.approved_by,
+            "approvedAt": m.approved_at,
+            "predictionCount": pred_count.get(m.id, 0),
+            "complianceChecks": cc,
+        })
+
+    audit_log = [
+        {
+            "id": a.id, "action": a.action, "entityType": a.entity_type,
+            "entityName": a.entity_name, "detail": a.detail,
+            "user": a.user, "team": a.team, "status": a.status,
+            "createdAt": a.created_at,
+        }
+        for a in audit
+    ]
+
     return {
-        "modelInventory": [
-            {
-                "id": m.id, "name": m.name, "algorithm": m.algorithm,
-                "status": m.status, "approvalStatus": m.approval_status,
-                "isDeployed": m.is_deployed, "trainedAt": m.trained_at,
-                "approvedBy": m.approved_by, "approvedAt": m.approved_at,
-            }
-            for m in models
-        ],
+        "registry": registry,
+        "auditLog": audit_log,
         "summary": {
             "totalModels": len(models),
-            "approvedModels": len(approved),
+            "deployed": len(deployed),
+            "approved": len(approved),
             "pendingApproval": len(pending),
-            "deployedModels": len(deployed),
         },
-        "recentActivity": [
-            {
-                "id": a.id, "action": a.action, "entityType": a.entity_type,
-                "entityName": a.entity_name, "detail": a.detail,
-                "user": a.user, "team": a.team, "status": a.status,
-                "createdAt": a.created_at,
-            }
-            for a in audit[:20]
-        ],
     }
 
 

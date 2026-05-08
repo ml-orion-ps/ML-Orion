@@ -106,8 +106,11 @@ def delete_dataset(db: Session, dataset_id: int) -> None:
 
 # ── MlModels ──────────────────────────────────────────────────────────────────
 
-def get_ml_models(db: Session) -> list[MlModel]:
-    return db.query(MlModel).order_by(MlModel.trained_at.desc()).all()
+def get_ml_models(db: Session, use_case: Optional[str] = None) -> list[MlModel]:
+    q = db.query(MlModel)
+    if use_case:
+        q = q.filter(MlModel.use_case == use_case)
+    return q.order_by(MlModel.trained_at.desc()).all()
 
 
 def get_ml_model(db: Session, model_id: int) -> Optional[MlModel]:
@@ -141,7 +144,7 @@ def delete_ml_model(db: Session, model_id: int) -> None:
 
 # ── Predictions ───────────────────────────────────────────────────────────────
 
-def get_predictions(db: Session, model_id: Optional[int] = None) -> list[dict]:
+def get_predictions(db: Session, model_id: Optional[int] = None, use_case: Optional[str] = None) -> list[dict]:
     q = (
         db.query(
             Prediction.id,
@@ -159,6 +162,8 @@ def get_predictions(db: Session, model_id: Optional[int] = None) -> list[dict]:
     )
     if model_id:
         q = q.filter(Prediction.model_id == model_id)
+    if use_case:
+        q = q.join(MlModel, Prediction.model_id == MlModel.id).filter(MlModel.use_case == use_case)
     q = q.order_by(Prediction.churn_probability.desc(), Prediction.predicted_at.desc())
     rows = q.all()
     keys = ["id", "model_id", "customer_id", "churn_probability", "risk_category",

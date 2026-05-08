@@ -6,10 +6,12 @@ from schemas import RecommendationUpdate
 
 router = APIRouter(prefix="/api", tags=["predictions"])
 
+USE_CASE = "tmt_customer_churn"
+
 
 @router.get("/predictions")
 def get_predictions(model_id: int | None = Query(None), db: Session = Depends(get_db)):
-    return storage.get_predictions(db, model_id)
+    return storage.get_predictions(db, model_id, use_case=USE_CASE)
 
 
 @router.get("/churn-events")

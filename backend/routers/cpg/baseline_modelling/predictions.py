@@ -4,12 +4,25 @@ from database import get_db
 import storage
 from schemas import RecommendationUpdate
 
-router = APIRouter(prefix="/api", tags=["predictions"])
+router = APIRouter(prefix="/predictions", tags=["predictions"])
+
+USE_CASE = "cpg_baseline_modelling"
 
 
 @router.get("/predictions")
 def get_predictions(model_id: int | None = Query(None), db: Session = Depends(get_db)):
-    return storage.get_predictions(db, model_id)
+    models = storage.get_ml_models(db, use_case=USE_CASE)
+    if model_id:
+        models = [m for m in models if m.id == model_id]
+
+    all_predictions = []
+    for m in models:
+        weights = m.model_weights or {}
+        rows = weights.get("predictions") or []
+        for row in rows:
+            all_predictions.append({**row, "model_id": m.id})
+
+    return all_predictions
 
 
 @router.get("/churn-events")

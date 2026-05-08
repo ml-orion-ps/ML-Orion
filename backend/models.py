@@ -91,12 +91,22 @@ class MlModel(Base):
     confusion_matrix = Column(JSON)
     model_weights = Column(JSON)
     trained_at = Column(DateTime, server_default=func.now())
+    use_case = Column(String(100), nullable=True)
     is_deployed = Column(Boolean, default=False)
     deployed_at = Column(DateTime)
     approval_status = Column(String(30), default="pending")
     approved_by = Column(Text)
     approved_at = Column(DateTime)
     approval_notes = Column(Text)
+    # Regression / baseline-specific metrics
+    wmape = Column(Float)
+    mae = Column(Float)
+    rmse = Column(Float)
+    r2 = Column(Float)
+    promo_effect_units = Column(Float)
+    baseline_units = Column(Float)
+    residual_units = Column(Float)
+    row_count = Column(Integer)
 
 
 class Prediction(Base):

@@ -38,7 +38,8 @@ def _run_script(script_name: str, input_data: dict, extra_args: list[str] | None
     This is the same pattern as the Node.js python-executor.ts
     but cleaner since it's pure Python.
     """
-    python = _find_python()
+    # python = _find_python()
+    python = sys.executable
     base_dir = script_dir if script_dir is not None else _SCRIPT_DIR
     script_path = str(base_dir / script_name)
 
@@ -53,12 +54,12 @@ def _run_script(script_name: str, input_data: dict, extra_args: list[str] | None
 
         # Use CREATE_NEW_PROCESS_GROUP on Windows so uvicorn --reload signals
         # (CTRL_C_EVENT / SIGINT) don't cascade into the ML subprocess.
-        import sys as _sys
-        extra_kwargs: dict = {}
-        if _sys.platform == "win32":
-            extra_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
-        else:
-            extra_kwargs["start_new_session"] = True
+        # import sys as _sys
+        # extra_kwargs: dict = {}
+        # if _sys.platform == "win32":
+        #     extra_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+        # else:
+        #     extra_kwargs["start_new_session"] = True
 
         proc = subprocess.run(
             cmd,
@@ -66,7 +67,7 @@ def _run_script(script_name: str, input_data: dict, extra_args: list[str] | None
             text=True,
             timeout=600,
             cwd=str(base_dir),
-            **extra_kwargs,
+            # **extra_kwargs,
         )
         if proc.returncode != 0:
             raise RuntimeError(f"Script {script_name} failed:\n{proc.stderr[-2000:]}")
@@ -100,6 +101,7 @@ def run_baseline_prediction(
     }
    
     return _run_script("baseline_prediction.py", payload, script_dir=_CPG_BASELINE_DIR)
+
 
 
 def run_train_model(
