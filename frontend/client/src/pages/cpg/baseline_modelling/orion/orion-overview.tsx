@@ -48,12 +48,12 @@ export default function OrionOverview() {
   const [savedBanner, setSavedBanner] = useState(false);
   const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
 
-  const { data, isLoading } = useQuery<any>({ queryKey: ["/api/orion/overview"] });
-  const { data: models } = useQuery<any[]>({ queryKey: ["/api/models"] });
+  const { data, isLoading } = useQuery<any>({ queryKey: ["/api/cpg/orion/overview"] });
+  const { data: models } = useQuery<any[]>({ queryKey: ["/api/cpg/models"] });
   const { data: modelRiskDist } = useQuery<any>({
-    queryKey: ["/api/orion/risk-distribution", selectedModelId],
+    queryKey: ["/api/cpg/orion/risk-distribution", selectedModelId],
     queryFn: () =>
-      fetch(`/api/orion/risk-distribution${selectedModelId ? `?modelId=${selectedModelId}` : ""}`)
+      fetch(`/api/cpg/orion/risk-distribution${selectedModelId ? `?modelId=${selectedModelId}` : ""}`)
         .then(r => r.json()),
   });
   const { data: codeFiles } = useQuery<CodeFileTab[]>({
@@ -68,12 +68,12 @@ export default function OrionOverview() {
   });
 
   const deployMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/models/${id}/deploy`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/models"] }); qc.invalidateQueries({ queryKey: ["/api/orion/overview"] }); toast({ title: "Model deployed" }); },
+    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/models/${id}/deploy`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/cpg/models"] }); qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] }); toast({ title: "Model deployed" }); },
   });
   const undeployMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/models/${id}/undeploy`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/models"] }); qc.invalidateQueries({ queryKey: ["/api/orion/overview"] }); toast({ title: "Model undeployed" }); },
+    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/models/${id}/undeploy`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/cpg/models"] }); qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] }); toast({ title: "Model undeployed" }); },
   });
   const saveMut = useMutation({
     mutationFn: async ({ fileId, content }: { fileId: string; content: string }) => {
@@ -137,34 +137,33 @@ export default function OrionOverview() {
   );
 
   return (
-    <OrionLayout title="ML Orion Overview" subtitle="Decision model factory — all numbers from live database" isLoading={isLoading}>
-      <div className="mb-4"><OrionNav current="/orion/overview" /></div>
+    <OrionLayout title="CPG Baseline Modelling — Orion Overview" subtitle="Baseline prediction model factory — all numbers from live database" isLoading={isLoading}>
+      <div className="mb-4"><OrionNav current="/cpg/baseline-modelling/orion/overview" /></div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <KpiCard label="Total Models" value={kpis.totalModels ?? "—"} />
+        <KpiCard label="Total Runs" value={kpis.totalModels ?? "—"} />
         <KpiCard label="Deployed" value={kpis.deployedModels ?? "—"} trend={kpis.deployedModels > 0 ? "up" : undefined} />
-        <KpiCard label="Avg AUC (Deployed)" value={kpis.avgAuc ? `${(kpis.avgAuc * 100).toFixed(1)}%` : "—"} />
-        <KpiCard label="Total Predictions" value={kpis.totalPredictions?.toLocaleString() ?? "—"} />
-        <KpiCard label="Customers Scored" value={kpis.customersScored?.toLocaleString() ?? "—"} />
+        <KpiCard label="Avg R² (Deployed)" value={kpis.avgR2 != null ? kpis.avgR2.toFixed(3) : "—"} trend="up" />
+        <KpiCard label="Total Rows Scored" value={kpis.totalRowsScored?.toLocaleString() ?? "—"} />
+        <KpiCard label="Avg WMAPE (Deployed)" value={kpis.avgWmape != null ? `${(kpis.avgWmape * 100).toFixed(1)}%` : "—"} />
         <KpiCard label="Datasets" value={kpis.totalDatasets ?? "—"} />
-        <KpiCard label="Retention Success" value={kpis.retentionSuccessRate ? `${kpis.retentionSuccessRate}%` : "—"} trend="up" />
-        <KpiCard label="Revenue at Risk" value={kpis.revenueAtRisk ? `$${(kpis.revenueAtRisk / 1000).toFixed(0)}K` : "—"} trend="down" />
+        <KpiCard label="Promo Effect Units" value={kpis.totalPromoEffectUnits?.toLocaleString() ?? "—"} trend="up" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <div className="border rounded-lg p-4 bg-card">
-          <h3 className="text-sm font-semibold mb-4">Model Performance Comparison</h3>
+          <h3 className="text-sm font-semibold mb-4">Baseline Run Performance</h3>
           {perfData.length === 0 ? (
-            <p className="text-sm text-muted-foreground text-center py-8">No models trained yet. Go to Experiment Lab to train your first model.</p>
+            <p className="text-sm text-muted-foreground text-center py-8">No baseline runs yet. Go to Experiment Lab to run your first prediction.</p>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={perfData} margin={{ left: -10 }}>
                 <XAxis dataKey="name" tick={{ fontSize: 10 }} />
-                <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} unit="%" />
-                <Tooltip formatter={(v: any) => `${v}%`} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="accuracy" name="Accuracy" fill={BAR_COLORS[0]} radius={[2, 2, 0, 0]} />
-                <Bar dataKey="auc" name="AUC-ROC" fill={BAR_COLORS[1]} radius={[2, 2, 0, 0]} />
-                <Bar dataKey="f1" name="F1 Score" fill={BAR_COLORS[2]} radius={[2, 2, 0, 0]} />
+                <Bar dataKey="r2" name="R²" fill={BAR_COLORS[0]} radius={[2, 2, 0, 0]} />
+                <Bar dataKey="wmape" name="WMAPE" fill={BAR_COLORS[1]} radius={[2, 2, 0, 0]} />
+                <Bar dataKey="mae" name="MAE" fill={BAR_COLORS[2]} radius={[2, 2, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -172,13 +171,13 @@ export default function OrionOverview() {
 
         <div className="border rounded-lg p-4 bg-card">
           <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-semibold">Active Customer Risk Distribution</h3>
+            <h3 className="text-sm font-semibold">SKU Baseline Deviation Distribution</h3>
             <select
               className="text-xs border rounded px-2 py-1 bg-background"
               value={selectedModelId ?? ""}
               onChange={e => setSelectedModelId(e.target.value ? Number(e.target.value) : null)}
             >
-              <option value="">Baseline (All Customers)</option>
+              <option value="">Baseline (All SKUs)</option>
               {trainedModels.map((m: any) => (
                 <option key={m.id} value={m.id}>
                   {m.name} ({m.algorithm})
@@ -201,8 +200,8 @@ export default function OrionOverview() {
             </PieChart>
           </ResponsiveContainer>
           <div className="flex gap-4 mt-2 justify-center text-xs">
-            <span>Churn Rate: <strong className="text-red-500">{activeChurnRate}%</strong></span>
-            <span>Revenue at Risk: <strong className="text-amber-500">${((activeRevenueAtRisk || 0) / 1000).toFixed(0)}K</strong></span>
+            <span>Forecast Error: <strong className="text-red-500">{activeChurnRate}%</strong></span>
+            <span>Revenue Impact: <strong className="text-emerald-500">${((activeRevenueAtRisk || 0) / 1000).toFixed(0)}K</strong></span>
           </div>
         </div>
       </div>
@@ -346,7 +345,7 @@ export default function OrionOverview() {
       <div className="border rounded-lg bg-card">
         <div className="p-4 border-b">
           <h3 className="text-sm font-semibold">Model Registry</h3>
-          <p className="text-xs text-muted-foreground mt-1">Manage all trained models — deploy to activate churn scoring</p>
+          <p className="text-xs text-muted-foreground mt-1">Manage all trained models — deploy to activate baseline scoring</p>
         </div>
         {(!models || models.length === 0) ? (
           <p className="text-sm text-muted-foreground text-center py-10">No models yet. Train your first model in the Experiment Lab.</p>
@@ -355,7 +354,7 @@ export default function OrionOverview() {
             <table className="w-full text-xs">
               <thead className="bg-muted/50">
                 <tr>
-                  {["Name", "Algorithm", "Status", "Accuracy", "AUC", "F1", "Precision", "Recall", "Actions"].map(h => (
+                  {["Name", "Algorithm", "Status", "R²", "WMAPE", "MAE", "RMSE", "Rows Scored", "Actions"].map(h => (
                     <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>
                   ))}
                 </tr>
@@ -366,11 +365,11 @@ export default function OrionOverview() {
                     <td className="p-3 font-medium max-w-[180px] truncate" title={m.name}>{m.name}</td>
                     <td className="p-3 text-muted-foreground">{m.algorithm}</td>
                     <td className="p-3"><StatusBadge status={m.isDeployed ? "Production" : m.status} /></td>
-                    <td className="p-3">{m.accuracy ? `${(m.accuracy * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="p-3 font-semibold text-blue-600">{m.auc ? `${(m.auc * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="p-3">{m.f1Score ? `${(m.f1Score * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="p-3">{m.precision ? `${(m.precision * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="p-3">{m.recall ? `${(m.recall * 100).toFixed(1)}%` : "—"}</td>
+                    <td className="p-3 font-semibold text-blue-600">{m.r2 != null ? m.r2.toFixed(3) : "—"}</td>
+                    <td className="p-3">{m.wmape != null ? `${(m.wmape * 100).toFixed(1)}%` : "—"}</td>
+                    <td className="p-3">{m.mae != null ? m.mae.toFixed(2) : "—"}</td>
+                    <td className="p-3">{m.rmse != null ? m.rmse.toFixed(2) : "—"}</td>
+                    <td className="p-3">{m.rowCount?.toLocaleString() ?? "—"}</td>
                     <td className="p-3">
                       {m.isDeployed ? (
                         <Button size="sm" variant="outline" className="h-6 text-xs gap-1" data-testid={`button-undeploy-${m.id}`}

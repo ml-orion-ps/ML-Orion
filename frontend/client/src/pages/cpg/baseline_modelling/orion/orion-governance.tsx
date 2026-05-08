@@ -1,7 +1,10 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { OrionLayout, KpiCard, StatusBadge, OrionNav } from "@/components/orion-layout";
-import { CheckCircle2, AlertTriangle, XCircle, ShieldCheck, Database, Clock, User, Users, Activity } from "lucide-react";
+import { CheckCircle2, XCircle, ShieldCheck, Database, Clock, User, Users, Activity } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 function CompliancePip({ ok }: { ok: boolean }) {
   return ok
@@ -10,32 +13,25 @@ function CompliancePip({ ok }: { ok: boolean }) {
 }
 
 const ACTION_ICON: Record<string, string> = {
-  train: "🧪",
-  deploy: "🚀",
-  undeploy: "⏹",
-  score: "🎯",
-  delete: "🗑",
-  approved: "✅",
-  rejected: "❌",
-  approve: "✅",
+  train: "🧪", deploy: "🚀", undeploy: "⏹", score: "🎯",
+  delete: "🗑", approved: "✅", rejected: "❌", approve: "✅",
 };
 
 const ACTION_COLOR: Record<string, string> = {
-  train: "text-blue-400",
-  deploy: "text-emerald-400",
-  undeploy: "text-amber-400",
-  score: "text-primary",
-  delete: "text-red-400",
-  approved: "text-emerald-400",
-  rejected: "text-red-400",
-  approve: "text-emerald-400",
+  train: "text-blue-400", deploy: "text-emerald-400", undeploy: "text-amber-400",
+  score: "text-primary", delete: "text-red-400",
+  approved: "text-emerald-400", rejected: "text-red-400", approve: "text-emerald-400",
 };
 
+const CPG_BASE = "/cpg/baseline-modelling/orion";
+
 export default function OrionGovernancePage() {
+  const qc = useQueryClient();
+  const { toast } = useToast();
   const [tab, setTab] = useState<"registry" | "audit" | "compliance">("registry");
   const [auditFilter, setAuditFilter] = useState<string>("all");
 
-  const { data: gov, isLoading } = useQuery<any>({ queryKey: ["/api/orion/governance"] });
+  const { data: gov, isLoading } = useQuery<any>({ queryKey: ["/api/cpg/orion/governance"] });
 
   const registry: any[] = gov?.registry ?? [];
   const auditEntries: any[] = gov?.auditLog ?? [];
@@ -46,15 +42,43 @@ export default function OrionGovernancePage() {
     : auditEntries.filter(e => e.action === auditFilter || e.entityType === auditFilter);
 
   const actionTypes = Array.from(new Set(auditEntries.map(e => e.action)));
-
   const compliantCount = registry.filter(r => Object.values(r.complianceChecks || {}).every(Boolean)).length;
+
+  const approveMut = useMutation({
+    mutationFn: (id: number) =>
+      apiRequest("POST", `/api/cpg/models/${id}/approve`, { approvedBy: "governance-user", notes: "Approved via governance page" }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/governance"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
+      toast({ title: "Model approved" });
+    },
+  });
+
+  const deployMut = useMutation({
+    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/models/${id}/deploy`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/governance"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
+      toast({ title: "Model deployed" });
+    },
+  });
+
+  const undeployMut = useMutation({
+    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/models/${id}/undeploy`),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/governance"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
+      toast({ title: "Model undeployed" });
+    },
+  });
 
   return (
     <OrionLayout title="Governance" subtitle="Model registry, compliance, and full audit trail" isLoading={isLoading}>
       <div className="space-y-4">
-        <OrionNav current="/orion/governance" />
+        <OrionNav current={`${CPG_BASE}/governance`} basePath={CPG_BASE} />
 
-        {/* KPI Row */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
           <KpiCard label="Total Models" value={summary.totalModels ?? 0} />
           <KpiCard label="Deployed" value={summary.deployed ?? 0} color="green" />
@@ -64,7 +88,6 @@ export default function OrionGovernancePage() {
           <KpiCard label="Audit Events" value={auditEntries.length} color="blue" />
         </div>
 
-        {/* Tab Nav */}
         <div className="flex gap-1 border-b">
           {(["registry", "audit", "compliance"] as const).map(t => (
             <button key={t} onClick={() => setTab(t)} data-testid={`tab-gov-${t}`}
@@ -85,15 +108,15 @@ export default function OrionGovernancePage() {
             </div>
             {registry.length === 0 ? (
               <div className="p-8 text-center text-muted-foreground text-xs">
-                No models registered. Train models in the Experiments page.
-                <div className="mt-2"><a href="/orion/experiments" className="text-primary underline">Go to Experiments →</a></div>
+                No models registered. Run baseline prediction in the Experiments page.
+                <div className="mt-2"><a href={`${CPG_BASE}/experiments`} className="text-primary underline">Go to Experiments →</a></div>
               </div>
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b bg-muted/30">
-                      {["Model", "Algorithm", "Dataset", "AUC", "F1", "Status", "Trained", "Deployed", "Approval", "Approver", "Predictions"].map(h => (
+                      {["Model", "Algorithm", "Dataset", "R²", "WMAPE", "Status", "Trained", "Deployed", "Approval", "Approver", "Rows", "Actions"].map(h => (
                         <th key={h} className="text-left px-3 py-2 text-muted-foreground font-medium whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -108,10 +131,10 @@ export default function OrionGovernancePage() {
                         <td className="px-3 py-2 text-muted-foreground">{m.algorithm}</td>
                         <td className="px-3 py-2">
                           <p className="max-w-[120px] truncate">{m.datasetName}</p>
-                          <p className="text-[9px] text-muted-foreground">{m.datasetRows.toLocaleString()} rows</p>
+                          <p className="text-[9px] text-muted-foreground">{(m.datasetRows || 0).toLocaleString()} rows</p>
                         </td>
-                        <td className="px-3 py-2 font-mono font-bold text-primary">{m.auc?.toFixed(4) ?? "—"}</td>
-                        <td className="px-3 py-2 font-mono">{m.f1Score?.toFixed(4) ?? "—"}</td>
+                        <td className="px-3 py-2 font-mono font-bold text-blue-600">{m.r2 != null ? m.r2.toFixed(3) : "—"}</td>
+                        <td className="px-3 py-2 font-mono">{m.wmape != null ? `${(m.wmape * 100).toFixed(1)}%` : "—"}</td>
                         <td className="px-3 py-2"><StatusBadge status={m.isDeployed ? "deployed" : m.status} /></td>
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
                           <div className="flex items-center gap-1">
@@ -139,7 +162,31 @@ export default function OrionGovernancePage() {
                             </div>
                           ) : "—"}
                         </td>
-                        <td className="px-3 py-2 font-mono">{m.predictionCount.toLocaleString()}</td>
+                        <td className="px-3 py-2 font-mono">{(m.predictionCount ?? 0).toLocaleString()}</td>
+                        <td className="px-3 py-2">
+                          <div className="flex flex-col gap-1">
+                            {m.approvalStatus !== "approved" && (
+                              <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1 border-emerald-500/50 text-emerald-600 hover:bg-emerald-50"
+                                onClick={() => approveMut.mutate(m.id)} disabled={approveMut.isPending}
+                                data-testid={`button-approve-${m.id}`}>
+                                ✅ Approve
+                              </Button>
+                            )}
+                            {m.isDeployed ? (
+                              <Button size="sm" variant="outline" className="h-6 text-[10px] gap-1"
+                                onClick={() => undeployMut.mutate(m.id)} disabled={undeployMut.isPending}
+                                data-testid={`button-undeploy-${m.id}`}>
+                                ⏹ Undeploy
+                              </Button>
+                            ) : (
+                              <Button size="sm" className="h-6 text-[10px] gap-1"
+                                onClick={() => deployMut.mutate(m.id)} disabled={deployMut.isPending}
+                                data-testid={`button-deploy-${m.id}`}>
+                                🚀 Deploy
+                              </Button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -288,7 +335,7 @@ export default function OrionGovernancePage() {
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs">
                 {[
                   { label: "Data Lineage", desc: "Dataset linked and traceable" },
-                  { label: "Metrics Recorded", desc: "AUC and accuracy available" },
+                  { label: "Metrics Recorded", desc: "R² and WMAPE available" },
                   { label: "Features Documented", desc: "Feature importance recorded" },
                   { label: "Hyperparams Logged", desc: "Training config saved" },
                   { label: "Approval", desc: "Approved by governance team" },

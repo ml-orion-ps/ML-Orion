@@ -76,7 +76,7 @@ function HeaderLabel() {
   const [location] = useLocation();
   if (location.startsWith("/demo/")) return <span className="text-xs text-muted-foreground">ML Orion — Use Case Intelligence</span>;
   if (location.startsWith("/orion/")) return <span className="text-xs text-muted-foreground">ML Orion — ML Factory</span>;
-  return <span className="text-xs text-muted-foreground">ML Orion — Customer Churn Intelligence</span>;
+  return <span className="text-xs text-muted-foreground">ML Orion</span>;
 }
 
 function AppContent() {

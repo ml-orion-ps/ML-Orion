@@ -262,10 +262,10 @@ export default function BaselineOrionDataPage() {
   const hasAccountNumber = builderColumns.some(c => c.name === "account_number");
 
   const { data: suggestedFeatures = [], isLoading: suggestionsLoading } = useQuery<any[]>({
-    queryKey: ["/api/datasets", selectedFeatureDataset, "feature-suggestions"],
+    queryKey: ["/api/cpg/datasets", selectedFeatureDataset, "feature-suggestions"],
     queryFn: async () => {
       if (selectedFeatureDataset === null) return [];
-      const res = await fetch(`/api/datasets/${selectedFeatureDataset}/feature-suggestions`);
+      const res = await fetch(`/api/cpg/datasets/${selectedFeatureDataset}/feature-suggestions`);
       if (!res.ok) throw new Error(await res.text());
       const json = await res.json();
       return Array.isArray(json.suggestions) ? json.suggestions : [];
@@ -281,12 +281,12 @@ export default function BaselineOrionDataPage() {
         ...suggestion,
         status: suggestion.status || "ready",
       };
-      const res = await apiRequest("POST", `/api/datasets/${selectedFeatureDataset}/custom-features`, body);
+      const res = await apiRequest("POST", `/api/cpg/datasets/${selectedFeatureDataset}/custom-features`, body);
       return res.json();
     },
     onSuccess: (data: any) => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets", selectedFeatureDataset, "custom-features"] });
-      qc.invalidateQueries({ queryKey: ["/api/datasets", selectedFeatureDataset, "feature-suggestions"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/datasets", selectedFeatureDataset, "custom-features"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/datasets", selectedFeatureDataset, "feature-suggestions"] });
       setStagedFeatures((prev) => new Set(prev).add(data.feature.id));
       toast({ title: "Feature added", description: `${data.feature.name} has been added to this dataset.` });
     },
@@ -302,7 +302,7 @@ export default function BaselineOrionDataPage() {
   const previewFeatureMut = useMutation({
     mutationFn: async () => {
       if (selectedFeatureDataset === null) throw new Error("Select a dataset first");
-      const res = await apiRequest("POST", `/api/datasets/${selectedFeatureDataset}/custom-features/preview`, buildFeaturePayload(featureDraft));
+      const res = await apiRequest("POST", `/api/cpg/datasets/${selectedFeatureDataset}/custom-features/preview`, buildFeaturePayload(featureDraft));
       return res.json();
     },
     onSuccess: (data) => {
@@ -376,18 +376,32 @@ export default function BaselineOrionDataPage() {
   });
 
   const edaMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/datasets/${id}/eda`, { targetColumn: "is_churned" }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets"] });
+    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/datasets/${id}/eda?usecase=baseline`),
+    onSuccess: async (response: Response) => {
+      try {
+        const data = await response.json();
+        qc.setQueryData(["/api/datasets"], (old: any[] = []) =>
+          old.map((d: any) => d.id === data.id ? data : d)
+        );
+      } catch {
+        qc.invalidateQueries({ queryKey: ["/api/datasets"] });
+      }
       toast({ title: "EDA complete", description: "Analysis has been generated for this dataset." });
     },
-    onError: (e: any) => toast({ title: "EDA failed", description: e.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: "EDA failed", description: String(e?.message ?? e), variant: "destructive" }),
   });
 
+  // const selectedDataset = edaSource !== "live" ? datasets.find(d => d.id === edaSource) ?? null : null;
+  // const dsEda = selectedDataset ? ((selectedDataset as any).edaReport?.["baseline"] ?? null) : null;
+  // const dsQuality = selectedDataset ? (selectedDataset as any).qualityReport as any : null;
   const selectedDataset = edaSource !== "live" ? datasets.find(d => d.id === edaSource) ?? null : null;
-  const dsEda = selectedDataset ? (selectedDataset as any).edaReport as any : null;
-  const dsQuality = selectedDataset ? (selectedDataset as any).qualityReport as any : null;
+  // Gracefully handle snake_case vs camelCase, and flat vs nested structures
+  const rawEda = selectedDataset ? ((selectedDataset as any).edaReport || (selectedDataset as any).eda_report) : null;
+  const dsEda = rawEda ? (rawEda["baseline"] || rawEda) : null;
+
+const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (selectedDataset as any).quality_report) : null;
   const activeEda = edaSource === "live" ? eda : dsEda;
+  const isBaseline = activeEda?.usecase === "baseline";
   const isActiveEdaPending = edaSource === "live" ? edaLoading : edaMut.isPending;
   const hasActiveEda = Boolean(activeEda);
   const sourceLabel = edaSource === "live" ? "Customers" : "Rows";
@@ -412,6 +426,13 @@ export default function BaselineOrionDataPage() {
       setSelectedCatCol(catCols[0]);
     }
   }, [activeEda, catCols.length, numCols.length, selectedCatCol, selectedNumCol]);
+
+  // Auto-select the first dataset when switching to EDA tab (instead of defaulting to "live")
+  useEffect(() => {
+    if (activeTab === "eda" && edaSource === "live" && datasets.length > 0) {
+      setEdaSource(datasets[0].id);
+    }
+  }, [activeTab, datasets.length]);
 
   // Use model features from API (sorted by importance), or fallback to empty array
   const MODEL_FEATURES = modelFeatures?.features || [];
@@ -738,32 +759,82 @@ export default function BaselineOrionDataPage() {
                         </ul>
                       </div>
                     )}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <KpiCard label={`Total ${sourceLabel}`} value={activeEda.overview.totalRows.toLocaleString()} color="blue" />
-                      <KpiCard label="Churned" value={activeEda.overview.churnedRows.toLocaleString()} color="red" sub={`${activeEda.overview.churnRate}% churn rate`} />
-                      <KpiCard label="Retained" value={activeEda.overview.retainedRows.toLocaleString()} color="green" />
-                      <KpiCard label="Features" value={activeEda.overview.features} sub={`${activeEda.overview.numericFeatures} numeric · ${activeEda.overview.categoricalFeatures} categorical`} />
-                    </div>
+                    {isBaseline ? (
+                      <>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <KpiCard label="Total Rows" value={(activeEda.overview.totalRows ?? 0).toLocaleString()} color="blue" />
+                          <KpiCard label="SKUs" value={activeEda.overview.skuCount?.toLocaleString() ?? "—"} color="blue" />
+                          <KpiCard label="Stores" value={activeEda.overview.storeCount?.toLocaleString() ?? "—"} color="green" />
+                          <KpiCard label="Weeks" value={activeEda.overview.weekCount?.toLocaleString() ?? "—"} color="amber" />
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <KpiCard label="Brands" value={activeEda.overview.brandCount?.toLocaleString() ?? "—"} color="blue" />
+                          <KpiCard label="Categories" value={activeEda.overview.categoryCount?.toLocaleString() ?? "—"} color="green" />
+                          <KpiCard label="Channels" value={activeEda.overview.channelCount?.toLocaleString() ?? "—"} color="amber" />
+                          <KpiCard label="Regions" value={activeEda.overview.regionCount?.toLocaleString() ?? "—"} />
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <KpiCard label="Total Sales Units" value={activeEda.overview.totalSalesUnits?.toLocaleString() ?? "—"} color="blue" />
+                          <KpiCard label="Total Net Sales" value={activeEda.overview.totalNetSales != null ? `₹${Number(activeEda.overview.totalNetSales).toLocaleString()}` : "—"} color="green" />
+                          <KpiCard label="Avg Price" value={activeEda.overview.avgPrice != null ? `₹${activeEda.overview.avgPrice}` : "—"} color="amber" />
+                          <KpiCard label="Avg Discount" value={activeEda.overview.avgDiscount != null ? `₹${activeEda.overview.avgDiscount}` : "—"} />
+                        </div>
+                      </>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <KpiCard label={`Total ${sourceLabel}`} value={(activeEda.overview.totalRows ?? 0).toLocaleString()} color="blue" />
+                        <KpiCard label="Churned" value={(activeEda.overview.churnedRows ?? 0).toLocaleString()} color="red" sub={`${activeEda.overview.churnRate ?? 0}% churn rate`} />
+                        <KpiCard label="Retained" value={(activeEda.overview.retainedRows ?? 0).toLocaleString()} color="green" />
+                        <KpiCard label="Features" value={activeEda.overview.features} sub={`${activeEda.overview.numericFeatures} numeric · ${activeEda.overview.categoricalFeatures} categorical`} />
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className="bg-card border rounded-lg p-4">
-                        <h4 className="text-xs font-semibold mb-4 uppercase tracking-wider text-muted-foreground">Class Balance</h4>
-                        <div className="flex items-end gap-6 h-28 justify-center">
-                          {[
-                            { label: "Retained", value: activeEda.overview.retainedRows, color: "bg-emerald-500", total: activeEda.overview.totalRows },
-                            { label: "Churned", value: activeEda.overview.churnedRows, color: "bg-red-500", total: activeEda.overview.totalRows },
-                          ].map(b => {
-                            const pct = b.total > 0 ? b.value / b.total : 0;
-                            return (
-                              <div key={b.label} className="flex flex-col items-center gap-1 w-20">
-                                <span className="text-[10px] font-mono font-bold">{(pct * 100).toFixed(1)}%</span>
-                                <div className="w-full rounded overflow-hidden" style={{ height: `${Math.max(8, pct * 80)}px` }}>
-                                  <div className={`w-full h-full ${b.color} opacity-80`} />
-                                </div>
-                                <span className="text-[10px] text-muted-foreground">{b.label}</span>
+                        {isBaseline ? (
+                          <>
+                            <h4 className="text-xs font-semibold mb-3 uppercase tracking-wider text-muted-foreground">Promo Columns Detected</h4>
+                            {(activeEda.overview.promoCols ?? []).length === 0 ? (
+                              <p className="text-xs text-muted-foreground">No promo/discount columns detected.</p>
+                            ) : (
+                              <div className="flex flex-wrap gap-1.5">
+                                {(activeEda.overview.promoCols ?? []).map((col: string) => (
+                                  <span key={col} className="px-2 py-0.5 bg-primary/10 text-primary rounded text-[10px] font-mono">{col}</span>
+                                ))}
                               </div>
-                            );
-                          })}
-                        </div>
+                            )}
+                            <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
+                              <div className="bg-muted/30 rounded p-2 text-center">
+                                <div className="text-[10px] text-muted-foreground">Numeric Features</div>
+                                <div className="font-bold text-primary">{activeEda.overview.numericFeatures}</div>
+                              </div>
+                              <div className="bg-muted/30 rounded p-2 text-center">
+                                <div className="text-[10px] text-muted-foreground">Categorical Features</div>
+                                <div className="font-bold text-primary">{activeEda.overview.categoricalFeatures}</div>
+                              </div>
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <h4 className="text-xs font-semibold mb-4 uppercase tracking-wider text-muted-foreground">Class Balance</h4>
+                            <div className="flex items-end gap-6 h-28 justify-center">
+                              {[
+                                { label: "Retained", value: activeEda.overview.retainedRows ?? 0, color: "bg-emerald-500", total: activeEda.overview.totalRows ?? 1 },
+                                { label: "Churned", value: activeEda.overview.churnedRows ?? 0, color: "bg-red-500", total: activeEda.overview.totalRows ?? 1 },
+                              ].map(b => {
+                                const pct = b.total > 0 ? b.value / b.total : 0;
+                                return (
+                                  <div key={b.label} className="flex flex-col items-center gap-1 w-20">
+                                    <span className="text-[10px] font-mono font-bold">{(pct * 100).toFixed(1)}%</span>
+                                    <div className="w-full rounded overflow-hidden" style={{ height: `${Math.max(8, pct * 80)}px` }}>
+                                      <div className={`w-full h-full ${b.color} opacity-80`} />
+                                    </div>
+                                    <span className="text-[10px] text-muted-foreground">{b.label}</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
                       </div>
                       <div className="bg-card border rounded-lg p-4">
                         <h4 className="text-xs font-semibold mb-3 uppercase tracking-wider text-muted-foreground">Completeness by Field</h4>
@@ -801,8 +872,8 @@ export default function BaselineOrionDataPage() {
                             <StatRow label="Q1 / Q3" value={`${selectedNum.q1} / ${selectedNum.q3}`} />
                             <StatRow label="Missing" value={`${selectedNum.nullCount ?? 0} (${(100 - (selectedNum.completeness ?? 100)).toFixed(1)}%)`} />
                             <div className="pt-1 mt-1 border-t border-border/30">
-                              <StatRow label="Churn cohort avg" value={selectedNum.churnMean} />
-                              <StatRow label="Retained cohort avg" value={selectedNum.retainedMean} />
+                              <StatRow label={isBaseline ? "Promo avg" : "Churn cohort avg"} value={isBaseline ? selectedNum.promoMean : selectedNum.churnMean} />
+                              <StatRow label={isBaseline ? "Non-promo avg" : "Retained cohort avg"} value={isBaseline ? selectedNum.nonPromoMean : selectedNum.retainedMean} />
                             </div>
                           </div>
                         )}
@@ -839,117 +910,418 @@ export default function BaselineOrionDataPage() {
                 )}
 
                 {edaTab === "Bivariate" && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-card border rounded-lg p-4">
-                      <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Churn Rate by Credit Profile</h4>
-                      <div className="space-y-3">
-                        {(activeEda.bivariate?.riskCategory || []).map((item: any, idx: number) => {
-                          const colors = ["bg-red-500", "bg-amber-500", "bg-blue-500", "bg-purple-500", "bg-emerald-500"];
-                          return (
-                            <div key={item.label} className="space-y-1">
-                              <div className="flex justify-between text-xs">
-                                <span className="capitalize font-medium">{item.label}</span>
-                                <span className="font-mono text-red-400">{item.churnRate}% churn</span>
-                              </div>
-                              <div className="h-3 bg-muted rounded overflow-hidden">
-                                <div className={`h-full rounded ${colors[idx % colors.length]}`}
-                                  style={{ width: `${Math.min(item.churnRate, 100)}%` }} />
-                              </div>
-                              <span className="text-[9px] text-muted-foreground">{item.total.toLocaleString()} customers · {item.churned} churned</span>
+                  isBaseline ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-card border rounded-lg p-4">
+                          <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Promo Column Coverage</h4>
+                          {(activeEda.promoCoverage || []).length === 0 ? (
+                            <p className="text-xs text-muted-foreground">No promo columns detected in this dataset.</p>
+                          ) : (
+                            <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                              {(activeEda.promoCoverage || []).map((item: any) => (
+                                <div key={item.column} className="space-y-0.5">
+                                  <div className="flex justify-between text-xs">
+                                    <span className="font-mono font-medium">{item.column}</span>
+                                    <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                                      {item.avgPromoSpend != null && <span>avg spend ₹{item.avgPromoSpend}</span>}
+                                      <span className="text-primary font-mono">{item.coveragePercent}%</span>
+                                    </div>
+                                  </div>
+                                  <div className="h-2.5 bg-muted rounded overflow-hidden">
+                                    <div className="h-full bg-primary rounded" style={{ width: `${item.coveragePercent}%` }} />
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          );
-                        })}
+                          )}
+                        </div>
+                        <div className="bg-card border rounded-lg p-4">
+                          <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Top SKUs by Volume</h4>
+                          <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                            {(() => {
+                              const maxUnits = Math.max(...(activeEda.topSkus || []).map((x: any) => x.totalUnits || 0), 1);
+                              return (activeEda.topSkus || []).slice(0, 15).map((item: any, idx: number) => (
+                                <div key={item.sku ?? idx} className="flex items-center gap-2 text-xs">
+                                  <span className="w-28 text-muted-foreground truncate font-mono text-[10px]">{item.sku}</span>
+                                  <div className="flex-1 h-2.5 bg-muted rounded overflow-hidden">
+                                    <div className="h-full bg-blue-500 rounded" style={{ width: `${(item.totalUnits / maxUnits) * 100}%` }} />
+                                  </div>
+                                  <span className="w-18 text-right font-mono text-[10px]">{item.totalUnits?.toLocaleString()}</span>
+                                </div>
+                              ));
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="bg-card border rounded-lg p-4">
+                          <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Sales Units by Brand</h4>
+                          {(activeEda.brandDist || []).length === 0 ? (
+                            <p className="text-xs text-muted-foreground">No brand column detected.</p>
+                          ) : (
+                            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                              {(() => {
+                                const maxU = Math.max(...(activeEda.brandDist || []).map((x: any) => x.totalUnits || 0), 1);
+                                return (activeEda.brandDist || []).map((item: any, idx: number) => (
+                                  <div key={item.brand ?? idx} className="flex items-center gap-2 text-xs">
+                                    <span className="w-28 truncate text-muted-foreground">{item.brand}</span>
+                                    <div className="flex-1 h-2.5 bg-muted rounded overflow-hidden">
+                                      <div className="h-full bg-emerald-500 rounded" style={{ width: `${(item.totalUnits / maxU) * 100}%` }} />
+                                    </div>
+                                    <span className="w-18 text-right font-mono text-[10px]">{item.totalUnits?.toLocaleString()}</span>
+                                  </div>
+                                ));
+                              })()}
+                            </div>
+                          )}
+                        </div>
+                        <div className="bg-card border rounded-lg p-4">
+                          <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Sales Units by Category</h4>
+                          {(activeEda.categoryDist || []).length === 0 ? (
+                            <p className="text-xs text-muted-foreground">No category column detected.</p>
+                          ) : (
+                            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                              {(() => {
+                                const maxU = Math.max(...(activeEda.categoryDist || []).map((x: any) => x.totalUnits || 0), 1);
+                                return (activeEda.categoryDist || []).map((item: any, idx: number) => (
+                                  <div key={item.category ?? idx} className="flex items-center gap-2 text-xs">
+                                    <span className="w-28 truncate text-muted-foreground">{item.category}</span>
+                                    <div className="flex-1 h-2.5 bg-muted rounded overflow-hidden">
+                                      <div className="h-full bg-amber-500 rounded" style={{ width: `${(item.totalUnits / maxU) * 100}%` }} />
+                                    </div>
+                                    <span className="w-18 text-right font-mono text-[10px]">{item.totalUnits?.toLocaleString()}</span>
+                                  </div>
+                                ));
+                              })()}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                    <div className="bg-card border rounded-lg p-4">
-                      <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Avg Monthly Revenue by Loyalty Status</h4>
-                      <p className="text-[10px] text-muted-foreground mb-3">bill_amount summed / snapshot months per account</p>
-                      <div className="space-y-3">
-                        {(activeEda.bivariate?.valueTier || []).filter((item: any) => item.total > 0).map((item: any) => {
-                          const maxRev = Math.max(...(activeEda.bivariate?.valueTier || []).map((x: any) => x.avgRevenue || 0), 1);
-                          return (
-                            <div key={item.label} className="space-y-1">
-                              <div className="flex justify-between text-xs">
-                                <span className="capitalize font-medium">{item.label}</span>
-                                <span className="font-mono text-blue-400">${item.avgRevenue}/mo</span>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="bg-card border rounded-lg p-4">
+                        <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Churn Rate by Credit Profile</h4>
+                        <div className="space-y-3">
+                          {(activeEda.bivariate?.riskCategory || []).map((item: any, idx: number) => {
+                            const colors = ["bg-red-500", "bg-amber-500", "bg-blue-500", "bg-purple-500", "bg-emerald-500"];
+                            return (
+                              <div key={item.label} className="space-y-1">
+                                <div className="flex justify-between text-xs">
+                                  <span className="capitalize font-medium">{item.label}</span>
+                                  <span className="font-mono text-red-400">{item.churnRate}% churn</span>
+                                </div>
+                                <div className="h-3 bg-muted rounded overflow-hidden">
+                                  <div className={`h-full rounded ${colors[idx % colors.length]}`} style={{ width: `${Math.min(item.churnRate, 100)}%` }} />
+                                </div>
+                                <span className="text-[9px] text-muted-foreground">{item.total.toLocaleString()} customers · {item.churned} churned</span>
                               </div>
-                              <div className="h-3 bg-muted rounded overflow-hidden">
-                                <div className="h-full bg-blue-500 rounded" style={{ width: `${(item.avgRevenue / maxRev) * 100}%` }} />
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div className="bg-card border rounded-lg p-4">
+                        <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Avg Monthly Revenue by Loyalty Status</h4>
+                        <p className="text-[10px] text-muted-foreground mb-3">bill_amount summed / snapshot months per account</p>
+                        <div className="space-y-3">
+                          {(activeEda.bivariate?.valueTier || []).filter((item: any) => item.total > 0).map((item: any) => {
+                            const maxRev = Math.max(...(activeEda.bivariate?.valueTier || []).map((x: any) => x.avgRevenue || 0), 1);
+                            return (
+                              <div key={item.label} className="space-y-1">
+                                <div className="flex justify-between text-xs">
+                                  <span className="capitalize font-medium">{item.label}</span>
+                                  <span className="font-mono text-blue-400">${item.avgRevenue}/mo</span>
+                                </div>
+                                <div className="h-3 bg-muted rounded overflow-hidden">
+                                  <div className="h-full bg-blue-500 rounded" style={{ width: `${(item.avgRevenue / maxRev) * 100}%` }} />
+                                </div>
+                                <span className="text-[9px] text-muted-foreground">{item.count.toLocaleString()} customers</span>
                               </div>
-                              <span className="text-[9px] text-muted-foreground">{item.count.toLocaleString()} customers</span>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )
                 )}
 
                 {edaTab === "Multivariate" && (
-                  <div className="bg-card border rounded-lg overflow-hidden">
-                    <div className="px-4 py-3 border-b">
-                      <h4 className="text-xs font-semibold">Churn Rate by Loyalty Status</h4>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">Avg Revenue = sum(bill_amount) / snapshot months per account</p>
+                  isBaseline ? (
+                    <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Store distribution */}
+                        <div className="bg-card border rounded-lg overflow-hidden">
+                          <div className="px-4 py-3 border-b">
+                            <h4 className="text-xs font-semibold">Store Distribution</h4>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Total units sold per store (top 20)</p>
+                          </div>
+                          <div className="overflow-y-auto max-h-56">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b bg-muted/30">
+                                  {["Store", "Units", "Share"].map(h => <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>)}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(() => {
+                                  const items = activeEda.storeDist || [];
+                                  const maxU = Math.max(...items.map((s: any) => s.totalUnits || 0), 1);
+                                  const total = items.reduce((sum: number, s: any) => sum + (s.totalUnits || 0), 0);
+                                  return items.map((s: any, i: number) => (
+                                    <tr key={i} className="border-b hover:bg-muted/10">
+                                      <td className="px-3 py-1.5 font-mono text-[10px]">{s.store}</td>
+                                      <td className="px-3 py-1.5 font-mono text-[10px]">{s.totalUnits?.toLocaleString()}</td>
+                                      <td className="px-3 py-1.5 w-32">
+                                        <div className="flex items-center gap-1">
+                                          <div className="flex-1 h-1.5 bg-muted rounded overflow-hidden">
+                                            <div className="h-full bg-primary rounded" style={{ width: `${(s.totalUnits / maxU) * 100}%` }} />
+                                          </div>
+                                          <span className="text-[9px] text-muted-foreground w-8 text-right">{total > 0 ? ((s.totalUnits / total) * 100).toFixed(1) : 0}%</span>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ));
+                                })()}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                        {/* Channel distribution */}
+                        <div className="bg-card border rounded-lg overflow-hidden">
+                          <div className="px-4 py-3 border-b">
+                            <h4 className="text-xs font-semibold">Channel Distribution</h4>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">Total units by sales channel</p>
+                          </div>
+                          <div className="overflow-y-auto max-h-56">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b bg-muted/30">
+                                  {["Channel", "Units", "Share"].map(h => <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>)}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(activeEda.channelDist || []).length === 0 ? (
+                                  <tr><td colSpan={3} className="px-3 py-4 text-muted-foreground text-center text-[10px]">No channel column detected.</td></tr>
+                                ) : (() => {
+                                  const items = activeEda.channelDist || [];
+                                  const maxU = Math.max(...items.map((s: any) => s.totalUnits || 0), 1);
+                                  const total = items.reduce((sum: number, s: any) => sum + (s.totalUnits || 0), 0);
+                                  return items.map((s: any, i: number) => (
+                                    <tr key={i} className="border-b hover:bg-muted/10">
+                                      <td className="px-3 py-1.5 text-[10px]">{s.channel}</td>
+                                      <td className="px-3 py-1.5 font-mono text-[10px]">{s.totalUnits?.toLocaleString()}</td>
+                                      <td className="px-3 py-1.5 w-32">
+                                        <div className="flex items-center gap-1">
+                                          <div className="flex-1 h-1.5 bg-muted rounded overflow-hidden">
+                                            <div className="h-full bg-amber-500 rounded" style={{ width: `${(s.totalUnits / maxU) * 100}%` }} />
+                                          </div>
+                                          <span className="text-[9px] text-muted-foreground w-8 text-right">{total > 0 ? ((s.totalUnits / total) * 100).toFixed(1) : 0}%</span>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ));
+                                })()}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Revenue by SKU */}
+                        <div className="bg-card border rounded-lg overflow-hidden">
+                          <div className="px-4 py-3 border-b">
+                            <h4 className="text-xs font-semibold">Top SKUs by Revenue</h4>
+                            <p className="text-[10px] text-muted-foreground mt-0.5">net_sales_value aggregated per SKU</p>
+                          </div>
+                          <div className="overflow-y-auto max-h-56">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b bg-muted/30">
+                                  {["SKU", "Revenue", "Share"].map(h => <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>)}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(() => {
+                                  const items = activeEda.revenueBySkus || [];
+                                  const maxR = Math.max(...items.map((s: any) => s.totalRevenue || 0), 1);
+                                  const total = items.reduce((sum: number, s: any) => sum + (s.totalRevenue || 0), 0);
+                                  return items.map((s: any, i: number) => (
+                                    <tr key={i} className="border-b hover:bg-muted/10">
+                                      <td className="px-3 py-1.5 font-mono text-[10px]">{s.sku}</td>
+                                      <td className="px-3 py-1.5 font-mono text-[10px]">₹{s.totalRevenue?.toLocaleString()}</td>
+                                      <td className="px-3 py-1.5 w-32">
+                                        <div className="flex items-center gap-1">
+                                          <div className="flex-1 h-1.5 bg-muted rounded overflow-hidden">
+                                            <div className="h-full bg-emerald-500 rounded" style={{ width: `${(s.totalRevenue / maxR) * 100}%` }} />
+                                          </div>
+                                          <span className="text-[9px] text-muted-foreground w-8 text-right">{total > 0 ? ((s.totalRevenue / total) * 100).toFixed(1) : 0}%</span>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ));
+                                })()}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                        {/* Competitor pricing */}
+                        <div className="bg-card border rounded-lg p-4">
+                          <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Competitor Pricing</h4>
+                          {!activeEda.competitorPricing || Object.keys(activeEda.competitorPricing).length === 0 ? (
+                            <p className="text-xs text-muted-foreground">No competitor price columns (COMP1_PRICE, COMP2_PRICE) detected.</p>
+                          ) : (
+                            <div className="space-y-3">
+                              {[
+                                { label: "Own Price (avg)", value: activeEda.competitorPricing.ownPriceAvg },
+                                { label: "Comp 1 Price (avg)", value: activeEda.competitorPricing.comp1PriceAvg },
+                                { label: "Comp 2 Price (avg)", value: activeEda.competitorPricing.comp2PriceAvg },
+                              ].filter(r => r.value != null).map(row => {
+                                const maxP = Math.max(
+                                  activeEda.competitorPricing.ownPriceAvg || 0,
+                                  activeEda.competitorPricing.comp1PriceAvg || 0,
+                                  activeEda.competitorPricing.comp2PriceAvg || 0,
+                                  1
+                                );
+                                return (
+                                  <div key={row.label} className="space-y-0.5">
+                                    <div className="flex justify-between text-xs">
+                                      <span className="text-muted-foreground">{row.label}</span>
+                                      <span className="font-mono font-medium">₹{row.value}</span>
+                                    </div>
+                                    <div className="h-2 bg-muted rounded overflow-hidden">
+                                      <div className="h-full bg-blue-500 rounded" style={{ width: `${(row.value / maxP) * 100}%` }} />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                              <div className="border-t pt-2 mt-2 grid grid-cols-2 gap-2 text-[10px]">
+                                {activeEda.competitorPricing.priceIndexVsComp1 != null && (
+                                  <div className="bg-muted/30 rounded p-2 text-center">
+                                    <div className="text-muted-foreground">Price Index vs Comp1</div>
+                                    <div className="font-bold text-primary">{activeEda.competitorPricing.priceIndexVsComp1}x</div>
+                                  </div>
+                                )}
+                                {activeEda.competitorPricing.priceIndexVsComp2 != null && (
+                                  <div className="bg-muted/30 rounded p-2 text-center">
+                                    <div className="text-muted-foreground">Price Index vs Comp2</div>
+                                    <div className="font-bold text-primary">{activeEda.competitorPricing.priceIndexVsComp2}x</div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      {/* Financial KPIs */}
+                      {activeEda.financialKpis && Object.keys(activeEda.financialKpis).some(k => activeEda.financialKpis[k] != null) && (
+                        <div className="bg-card border rounded-lg p-4">
+                          <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Financial KPIs</h4>
+                          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                            {activeEda.financialKpis.avgNPM != null && <KpiCard label="Avg NPM" value={`${(activeEda.financialKpis.avgNPM * 100).toFixed(2)}%`} color="green" />}
+                            {activeEda.financialKpis.avgGrossProfit != null && <KpiCard label="Avg Gross Profit" value={`₹${activeEda.financialKpis.avgGrossProfit?.toLocaleString()}`} color="blue" />}
+                            {activeEda.financialKpis.avgDiscountValue != null && <KpiCard label="Avg Discount" value={`₹${activeEda.financialKpis.avgDiscountValue}`} color="amber" />}
+                            {activeEda.financialKpis.discountPct != null && <KpiCard label="Discount % of Gross" value={`${activeEda.financialKpis.discountPct}%`} />}
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="border-b bg-muted/30">
-                            {["Loyalty Status", "Customers", "Churned", "Churn Rate", "Avg Monthly Revenue", "Risk Bar"].map(h => (
-                              <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(activeEda.multivariate || []).map((g: any, i: number) => (
-                            <tr key={i} className="border-b hover:bg-muted/10">
-                              <td className="px-3 py-2 capitalize font-medium">{g.valueTier}</td>
-                              <td className="px-3 py-2 font-mono">{g.total.toLocaleString()}</td>
-                              <td className="px-3 py-2 font-mono text-red-400">{g.churned.toLocaleString()}</td>
-                              <td className="px-3 py-2 font-mono font-bold" style={{ color: g.churnRate > 30 ? "#ef4444" : g.churnRate > 15 ? "#f59e0b" : "#10b981" }}>
-                                {g.churnRate}%
-                              </td>
-                              <td className="px-3 py-2 font-mono">${g.avgRevenue}</td>
-                              <td className="px-3 py-2 w-24">
-                                <div className="h-2 bg-muted rounded overflow-hidden">
-                                  <div className="h-full rounded" style={{ width: `${Math.min(g.churnRate, 100)}%`, backgroundColor: g.churnRate > 30 ? "#ef4444" : g.churnRate > 15 ? "#f59e0b" : "#10b981" }} />
-                                </div>
-                              </td>
+                  ) : (
+                    <div className="bg-card border rounded-lg overflow-hidden">
+                      <div className="px-4 py-3 border-b">
+                        <h4 className="text-xs font-semibold">Churn Rate by Loyalty Status</h4>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">Avg Revenue = sum(bill_amount) / snapshot months per account</p>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b bg-muted/30">
+                              {["Loyalty Status", "Customers", "Churned", "Churn Rate", "Avg Monthly Revenue", "Risk Bar"].map(h => (
+                                <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>
+                              ))}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {(activeEda.multivariate || []).map((g: any, i: number) => (
+                              <tr key={i} className="border-b hover:bg-muted/10">
+                                <td className="px-3 py-2 capitalize font-medium">{g.valueTier}</td>
+                                <td className="px-3 py-2 font-mono">{g.total.toLocaleString()}</td>
+                                <td className="px-3 py-2 font-mono text-red-400">{g.churned.toLocaleString()}</td>
+                                <td className="px-3 py-2 font-mono font-bold" style={{ color: g.churnRate > 30 ? "#ef4444" : g.churnRate > 15 ? "#f59e0b" : "#10b981" }}>
+                                  {g.churnRate}%
+                                </td>
+                                <td className="px-3 py-2 font-mono">${g.avgRevenue}</td>
+                                <td className="px-3 py-2 w-24">
+                                  <div className="h-2 bg-muted rounded overflow-hidden">
+                                    <div className="h-full rounded" style={{ width: `${Math.min(g.churnRate, 100)}%`, backgroundColor: g.churnRate > 30 ? "#ef4444" : g.churnRate > 15 ? "#f59e0b" : "#10b981" }} />
+                                  </div>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
-                  </div>
+                  )
                 )}
 
                 {edaTab === "Time Trends" && (
-                  <div className="bg-card border rounded-lg p-4">
-                    <h4 className="text-xs font-semibold mb-4 text-muted-foreground uppercase">Churn {"&"} Revenue by Tenure Cohort</h4>
-                    <div className="space-y-4">
-                      {(activeEda.timeTrends || []).map((t: any) => (
-                        <div key={t.bucket} className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="font-medium">{t.bucket}</span>
-                            <div className="flex gap-4 text-[10px] text-muted-foreground">
-                              <span>{t.total.toLocaleString()} customers</span>
-                              <span className="text-red-400">{t.churned} churned ({t.churnRate}%)</span>
-                              <span className="text-blue-400">${t.avgRevenue}/mo avg</span>
+                  isBaseline ? (
+                    <div className="bg-card border rounded-lg p-4">
+                      <h4 className="text-xs font-semibold mb-4 text-muted-foreground uppercase">Weekly Sales Volume</h4>
+                      <div className="space-y-3">
+                        {(activeEda.timeTrends || []).length === 0 ? (
+                          <p className="text-xs text-muted-foreground">No week/date column detected — time trends not available.</p>
+                        ) : (
+                          (() => {
+                            const maxUnits = Math.max(...(activeEda.timeTrends || []).map((t: any) => t.totalUnits || 0), 1);
+                            return (activeEda.timeTrends || []).map((t: any, i: number) => (
+                              <div key={t.week ?? i} className="space-y-0.5">
+                                <div className="flex justify-between text-xs">
+                                  <span className="font-mono text-muted-foreground">{t.week}</span>
+                                  <div className="flex gap-4 text-[10px] text-muted-foreground">
+                                    <span>{t.rowCount?.toLocaleString()} rows</span>
+                                    <span className="text-primary font-mono">{t.totalUnits?.toLocaleString()} units</span>
+                                    <span className="text-blue-400">avg {t.avgUnits}</span>
+                                  </div>
+                                </div>
+                                <div className="h-4 bg-muted rounded overflow-hidden">
+                                  <div className="h-full bg-primary/60 rounded" style={{ width: `${(t.totalUnits / maxUnits) * 100}%` }} />
+                                </div>
+                              </div>
+                            ));
+                          })()
+                        )}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-card border rounded-lg p-4">
+                      <h4 className="text-xs font-semibold mb-4 text-muted-foreground uppercase">Churn {"&"} Revenue by Tenure Cohort</h4>
+                      <div className="space-y-4">
+                        {(activeEda.timeTrends || []).map((t: any) => (
+                          <div key={t.bucket} className="space-y-1">
+                            <div className="flex justify-between text-xs">
+                              <span className="font-medium">{t.bucket}</span>
+                              <div className="flex gap-4 text-[10px] text-muted-foreground">
+                                <span>{(t.total ?? 0).toLocaleString()} customers</span>
+                                <span className="text-red-400">{t.churned} churned ({t.churnRate}%)</span>
+                                <span className="text-blue-400">${t.avgRevenue}/mo avg</span>
+                              </div>
+                            </div>
+                            <div className="flex gap-px h-5 rounded overflow-hidden">
+                              {(t.total ?? 0) > 0 && (
+                                <>
+                                  <div className="bg-emerald-500/50" style={{ flex: t.total - t.churned }} />
+                                  <div className="bg-red-500/70" style={{ flex: t.churned }} />
+                                </>
+                              )}
                             </div>
                           </div>
-                          <div className="flex gap-px h-5 rounded overflow-hidden">
-                            {t.total > 0 && (
-                              <>
-                                <div className="bg-emerald-500/50" style={{ flex: t.total - t.churned }} />
-                                <div className="bg-red-500/70" style={{ flex: t.churned }} />
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        ))}
+                      </div>
+                      <p className="text-[9px] text-muted-foreground mt-3">Green = retained · Red = churned (proportional width)</p>
                     </div>
-                    <p className="text-[9px] text-muted-foreground mt-3">Green = retained · Red = churned (proportional width)</p>
-                  </div>
+                  )
                 )}
 
                 {edaTab === "Correlation" && (
@@ -1722,7 +2094,7 @@ export default function BaselineOrionDataPage() {
                           </div>
                           <Button
                             size="sm"
-                            disabled={isSaved || saveSuggestedFeatureMut.isLoading}
+                            disabled={isSaved || saveSuggestedFeatureMut.isPending}
                             className={`text-xs h-7 mt-1 ${isStaged ? "bg-green-600/20 text-green-400 border border-green-500/30" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
                             onClick={() => {
                               if (isSaved) return;

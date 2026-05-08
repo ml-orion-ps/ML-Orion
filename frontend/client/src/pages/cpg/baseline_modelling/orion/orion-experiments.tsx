@@ -50,7 +50,7 @@ type BaselinePredictionResult = {
     promoColumnsUsed: string[];
     bestModel: string;
     bestParams: Record<string, any>;
-    metrics: { mae?: number; rmse?: number; r2?: number; test_wmape?: number };
+    metrics: { mae?: number; rmse?: number; r2?: number; test_Wmape?: number };
     totals: {
       actualUnits?: number;
       base0Units?: number;
@@ -91,11 +91,6 @@ export default function OrionExperiments() {
   const [selectedDatasetId, setSelectedDatasetId] = useState<string>("");
   const [baselineModels, setBaselineModels] = useState<string[]>(["Ridge", "RF", "XGB"]);
   const [baselineResult, setBaselineResult] = useState<BaselinePredictionResult | null>(null);
-  const [baselineRuns, setBaselineRuns] = useState<Array<{
-    id: number; name: string; bestModel: string; modelsRun: string[]; status: string;
-    mae: number | null; rmse: number | null; r2: number | null; testWmape: number | null;
-    baselineUnits: number | null; promoUnits: number | null; residualUnits: number | null;
-  }>>([]);
   const [progress, setProgress] = useState(0);
   const [isTraining, setIsTraining] = useState(false);
   const [selectedModel, setSelectedModel] = useState<ModelType | null>(null);
@@ -162,22 +157,10 @@ export default function OrionExperiments() {
     },
     onSuccess: (result: BaselinePredictionResult) => {
       qc.invalidateQueries({ queryKey: ["/api/cpg/datasets"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
       setBaselineResult(result);
       setSelectedModel(null);
-      setBaselineRuns(prev => [...prev, {
-        id: Date.now(),
-        name: name.trim() || `Baseline Run ${prev.length + 1}`,
-        bestModel: result.summary.bestModel || "Unknown",
-        modelsRun: baselineModels,
-        status: "Complete",
-        mae: result.summary.metrics?.mae ?? null,
-        rmse: result.summary.metrics?.rmse ?? null,
-        r2: result.summary.metrics?.r2 ?? null,
-        testWmape: result.summary.metrics?.test_wmape ?? null,
-        baselineUnits: result.summary.totals?.baselineWithoutPromoUnits ?? null,
-        promoUnits: result.summary.totals?.promoEffectUnits ?? null,
-        residualUnits: result.summary.totals?.residualUnits ?? null,
-      }]);
       toast({
         title: "Baseline prediction complete",
         description: `${result.summary.rowCount.toLocaleString()} rows scored — best model: ${result.summary.bestModel || "Unknown"}`,
@@ -298,12 +281,13 @@ export default function OrionExperiments() {
   ] : [];
 
   const last8Models = (models as ModelType[]).slice(-8);
+  const baselineRuns = models as any[];
   const last8BaselineRuns = baselineRuns.slice(-8);
   const bestBaselineRun = baselineRuns.length > 0
-    ? baselineRuns.reduce((b, r) => ((r.r2 ?? -Infinity) > (b.r2 ?? -Infinity) ? r : b))
+    ? baselineRuns.reduce((b: any, r: any) => ((r.r2 ?? -Infinity) > (b.r2 ?? -Infinity) ? r : b))
     : null;
-  const baselineRunChartKeys = last8BaselineRuns.map((r) => `#${baselineRuns.indexOf(r) + 1} ${r.bestModel}`);
-  const baselineComparisonData = last8BaselineRuns.map((r, i) => ({
+  const baselineRunChartKeys = last8BaselineRuns.map((r: any, i: number) => `#${i + 1} ${r.algorithm}`);
+  const baselineComparisonData = last8BaselineRuns.map((r: any, i: number) => ({
     name: baselineRunChartKeys[i],
     rmse: r.rmse != null ? Number(r.rmse) : 0,
   }));
@@ -588,7 +572,7 @@ export default function OrionExperiments() {
                   { label: "Rows", value: asNumber(visibleBaselineResult?.summary?.rowCount) },
                   { label: "Features", value: asNumber(visibleBaselineResult?.summary?.featureCount) },
                   { label: "R²", value: asFraction(visibleBaselineResult?.summary?.metrics?.r2) },
-                  { label: "WMAPE", value: asFraction(visibleBaselineResult?.summary?.metrics?.test_wmape) },
+                  // { label: "WMAPE", value: asFraction(visibleBaselineResult?.summary?.metrics?.test_Wmape) },
                   { label: "MAE", value: asNumber(visibleBaselineResult?.summary?.metrics?.mae) },
                   { label: "RMSE", value: asNumber(visibleBaselineResult?.summary?.metrics?.rmse) },
                   { label: "Promos", value: asNumber(visibleBaselineResult?.summary?.promoColumnsUsed?.length ?? 0) },
@@ -680,7 +664,7 @@ export default function OrionExperiments() {
                   { label: "Rows", v: visibleBaselineResult.summary.rowCount, formatter: asNumber },
                   { label: "Features", v: visibleBaselineResult.summary.featureCount, formatter: asNumber },
                   { label: "R²", v: visibleBaselineResult.summary.metrics?.r2, formatter: asFraction },
-                  { label: "WMAPE", v: 10.2, formatter: asFraction },
+                  // { label: "WMAPE", v: visibleBaselineResult.summary.metrics?.test_Wmape, formatter: asFraction },
                     // visibleBaselineResult.summary.metrics?.test_wmape, formatter: asPercent },
                   { label: "MAE", v: visibleBaselineResult.summary.metrics?.mae, formatter: asNumber },
                   { label: "RMSE", v: visibleBaselineResult.summary.metrics?.rmse, formatter: asNumber },
@@ -766,7 +750,7 @@ export default function OrionExperiments() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <KpiCard label="Experiments" value={baselineRuns.length} />
             <KpiCard label="Best RMSE" value={bestBaselineRun?.rmse != null ? Number(bestBaselineRun.rmse).toFixed(3) : "—"} />
-            <KpiCard label="Best Model" value={bestBaselineRun?.bestModel ?? "—"} />
+            <KpiCard label="Best Model" value={bestBaselineRun?.algorithm ?? "—"} />
              <KpiCard label="Deployed" value={(models as ModelType[]).filter(m => m.isDeployed).length} />
           </div>
 
@@ -936,7 +920,7 @@ export default function OrionExperiments() {
                   </td>
 
                   <td className="p-3 whitespace-nowrap font-semibold">
-                    {run.bestModel}
+                    {run.algorithm}
                   </td>
 
                   <td className="p-3 font-semibold text-blue-600 font-mono">
@@ -948,9 +932,7 @@ export default function OrionExperiments() {
                   </td>
 
                   <td className="p-3 font-mono">
-                    {run.r2 != null
-                      ? Number(run.r2).toFixed(3)
-                      : "—"}
+                    {run.r2 != null ? Number(run.r2).toFixed(3) : "—"}
                   </td>
 
                   <td className="p-3 font-mono">
@@ -958,7 +940,7 @@ export default function OrionExperiments() {
                   </td>
 
                   <td className="p-3 font-mono">
-                    {asNumber(run.promoUnits)}
+                    {asNumber(run.promoEffectUnits)}
                   </td>
 
                   <td className="p-3 font-mono">
@@ -966,7 +948,7 @@ export default function OrionExperiments() {
                   </td>
 
                   <td className="p-3">
-                    <StatusBadge status={run.status} />
+                    <StatusBadge status={run.isDeployed ? "Production" : run.status} />
                   </td>
 
                   <td className="p-3">
@@ -975,11 +957,7 @@ export default function OrionExperiments() {
                         size="sm"
                         variant="outline"
                         className="h-6 text-[10px] gap-1 px-2 text-red-600 hover:bg-red-50 border-red-200"
-                        onClick={() =>
-                          setBaselineRuns((prev) =>
-                            prev.filter((r) => r.id !== run.id)
-                          )
-                        }
+                        onClick={() => deleteMut.mutate(run.id)}
                       >
                         <Trash2 className="w-3 h-3" />
                       </Button>
