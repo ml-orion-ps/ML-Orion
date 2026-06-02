@@ -1,10 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+﻿from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from database import get_db
 import storage
 from schemas import RecommendationUpdate
 
-router = APIRouter(prefix="/api", tags=["predictions"])
+router = APIRouter(prefix="", tags=["predictions"])
 
 
 @router.get("/predictions")

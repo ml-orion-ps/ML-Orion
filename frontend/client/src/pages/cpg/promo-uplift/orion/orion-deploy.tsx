@@ -1,4 +1,4 @@
-// import { useState } from "react";
+﻿// import { useState } from "react";
 // import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 // import { apiRequest } from "@/lib/queryClient";
 // import { OrionLayout, KpiCard, StatusBadge, OrionNav } from "@/components/orion-layout";
@@ -31,9 +31,9 @@
 
 // function getMonitoringStatus(model: MlModel, predCount: number, totalActiveCustomers: number): { status: string; label: string } {
 //   if (!model.isDeployed) return { status: "stale", label: "Not Deployed" };
-//   if (predCount === 0) return { status: "stale", label: "Stale — No Predictions" };
+//   if (predCount === 0) return { status: "stale", label: "Stale �� No Predictions" };
 //   const coverage = totalActiveCustomers > 0 ? predCount / totalActiveCustomers : 0;
-//   if (coverage < 0.3) return { status: "at risk", label: "At Risk — Low Coverage" };
+//   if (coverage < 0.3) return { status: "at risk", label: "At Risk �� Low Coverage" };
 //   return { status: "healthy", label: "Healthy" };
 // }
 
@@ -47,8 +47,8 @@
 //   const [approvalAction, setApprovalAction] = useState<"approve" | "reject">("approve");
 //   const [monitorTab, setMonitorTab] = useState<"overview" | "drift" | "coverage">("overview");
 
-//   const { data: modelsRaw = [] } = useQuery<MlModel[]>({ queryKey: ["/api/models"] });
-//   const { data: predictions = [] } = useQuery<any[]>({ queryKey: ["/api/predictions"] });
+//   const { data: modelsRaw = [] } = useQuery<MlModel[]>({ queryKey: ["/api/cpg/promoUplift/models"] });
+//   const { data: predictions = [] } = useQuery<any[]>({ queryKey: ["/api/cpg/promoUplift/predictions"] });
 //   const { data: custStats } = useQuery<{ total: number; active: number; churned: number }>({ queryKey: ["/api/customers/stats"] });
 
 //   const models = modelsRaw as any[];
@@ -62,21 +62,21 @@
 //   }
 
 //   const deployMut = useMutation({
-//     mutationFn: (id: number) => apiRequest("POST", `/api/models/${id}/deploy`, {}),
-//     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/models"] }); toast({ title: "Model deployed" }); },
+//     mutationFn: (id: number) => apiRequest("POST", `/api/cpg/promoUplift/models/${id}/deploy`, {}),
+//     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/models"] }); toast({ title: "Model deployed" }); },
 //     onError: (e: any) => toast({ title: "Deploy failed", description: e.message, variant: "destructive" }),
 //   });
 
 //   const undeployMut = useMutation({
-//     mutationFn: (id: number) => apiRequest("POST", `/api/models/${id}/undeploy`, {}),
-//     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/models"] }); toast({ title: "Model undeployed" }); },
+//     mutationFn: (id: number) => apiRequest("POST", `/api/cpg/promoUplift/models/${id}/undeploy`, {}),
+//     onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/models"] }); toast({ title: "Model undeployed" }); },
 //     onError: (e: any) => toast({ title: "Undeploy failed", description: e.message, variant: "destructive" }),
 //   });
 
 //   const scoreMut = useMutation({
-//     mutationFn: (id: number) => apiRequest("POST", `/api/models/${id}/predict-customers`, {}),
+//     mutationFn: (id: number) => apiRequest("POST", `/api/cpg/promoUplift/models/${id}/predict-customers`, {}),
 //     onSuccess: (data: any) => {
-//       qc.invalidateQueries({ queryKey: ["/api/predictions"] });
+//       qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/predictions"] });
 //       toast({ title: `Scored ${data.predicted} customers` });
 //       setScoringModelId(null);
 //     },
@@ -84,10 +84,10 @@
 //   });
 
 //   const deleteMut = useMutation({
-//     mutationFn: (id: number) => apiRequest("DELETE", `/api/models/${id}`),
+//     mutationFn: (id: number) => apiRequest("DELETE", `/api/cpg/promoUplift/models/${id}`),
 //     onSuccess: () => {
-//       qc.invalidateQueries({ queryKey: ["/api/models"] });
-//       qc.invalidateQueries({ queryKey: ["/api/predictions"] });
+//       qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/models"] });
+//       qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/predictions"] });
 //       toast({ title: "Model deleted" });
 //       setDeleteId(null);
 //     },
@@ -96,9 +96,9 @@
 
 //   const approveMut = useMutation({
 //     mutationFn: ({ id, notes, action }: { id: number; notes: string; action: string }) =>
-//       apiRequest("POST", `/api/models/${id}/approve`, { approvedBy: "ml-ops-lead", approvalNotes: notes, action }),
+//       apiRequest("POST", `/api/cpg/promoUplift/models/${id}/approve`, { approvedBy: "ml-ops-lead", approvalNotes: notes, action }),
 //     onSuccess: () => {
-//       qc.invalidateQueries({ queryKey: ["/api/models"] });
+//       qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/models"] });
 //       toast({ title: `Model ${approvalAction === "approve" ? "approved" : "rejected"}` });
 //       setApprovalModel(null);
 //       setApprovalNotes("");
@@ -131,7 +131,7 @@
 //   return (
 //     <OrionLayout title="Deploy & Scoring" subtitle="Production model management, drift monitoring, and approval workflow">
 //       <div className="space-y-4">
-//         <OrionNav current="/orion/deploy" />
+//         <OrionNav current="/cpg/promo-uplift/orion/deploy" basePath="/cpg/promo-uplift/orion" />
 
 //         {/* KPI Row */}
 //         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
@@ -139,7 +139,7 @@
 //           <KpiCard label="Healthy" value={healthyCount} color="green" testId="kpi-healthy" />
 //           <KpiCard label="At Risk" value={atRiskCount} color={atRiskCount > 0 ? "amber" : "green"} testId="kpi-at-risk" />
 //           <KpiCard label="Stale" value={staleCount} color={staleCount > 0 ? "amber" : "green"} testId="kpi-stale" />
-//           <KpiCard label="Avg AUC" value={avgAuc ? avgAuc.toFixed(4) : "—"} color="blue" testId="kpi-auc" />
+//           <KpiCard label="Avg AUC" value={avgAuc ? avgAuc.toFixed(4) : "��"} color="blue" testId="kpi-auc" />
 //           <KpiCard label="Total Predictions" value={totalPredCount.toLocaleString()} testId="kpi-predictions" />
 //         </div>
 
@@ -173,11 +173,11 @@
 //                       <tr key={m.id} className="border-b hover:bg-muted/10" data-testid={`row-deployed-${m.id}`}>
 //                         <td className="px-3 py-2 font-medium max-w-[160px] truncate">{m.name}</td>
 //                         <td className="px-3 py-2 text-muted-foreground">{m.algorithm}</td>
-//                         <td className="px-3 py-2 font-mono font-bold text-primary">{m.auc?.toFixed(4) ?? "—"}</td>
-//                         <td className="px-3 py-2 font-mono">{m.accuracy ? `${(m.accuracy * 100).toFixed(1)}%` : "—"}</td>
+//                         <td className="px-3 py-2 font-mono font-bold text-primary">{m.auc?.toFixed(4) ?? "��"}</td>
+//                         <td className="px-3 py-2 font-mono">{m.accuracy ? `${(m.accuracy * 100).toFixed(1)}%` : "��"}</td>
 //                         <td className="px-3 py-2 font-mono">{predCount.toLocaleString()}</td>
-//                         <td className="px-3 py-2 text-muted-foreground">{m.deployedAt ? new Date(m.deployedAt).toLocaleDateString() : "—"}</td>
-//                         <td className="px-3 py-2"><StatusBadge status={monStatus.label.split(" — ")[0]} /></td>
+//                         <td className="px-3 py-2 text-muted-foreground">{m.deployedAt ? new Date(m.deployedAt).toLocaleDateString() : "��"}</td>
+//                         <td className="px-3 py-2"><StatusBadge status={monStatus.label.split(" �� ")[0]} /></td>
 //                         <td className="px-3 py-2">
 //                           <StatusBadge status={m.approvalStatus === "approved" ? "Approved" : m.approvalStatus === "rejected" ? "Rejected" : "Pending"} />
 //                         </td>
@@ -248,7 +248,7 @@
 //                             <p className="text-xs font-semibold truncate max-w-[180px]">{m.name}</p>
 //                             <p className="text-[10px] text-muted-foreground">{m.algorithm}</p>
 //                           </div>
-//                           <StatusBadge status={monStatus.label.split(" — ")[0]} />
+//                           <StatusBadge status={monStatus.label.split(" �� ")[0]} />
 //                         </div>
 //                         <div className="grid grid-cols-3 gap-2 text-center">
 //                           <div className="bg-muted/30 rounded p-2">
@@ -267,13 +267,13 @@
 //                         {driftAlert && (
 //                           <div className="flex items-center gap-1.5 text-[10px] text-amber-500 bg-amber-500/10 rounded px-2 py-1">
 //                             <AlertTriangle className="w-3 h-3 shrink-0" />
-//                             Drift detected — PSI {drift.psi.toFixed(3)} (threshold: 0.20)
+//                             Drift detected �� PSI {drift.psi.toFixed(3)} (threshold: 0.20)
 //                           </div>
 //                         )}
 //                         {m.approvalStatus === "approved" && (
 //                           <div className="flex items-center gap-1.5 text-[10px] text-emerald-500 bg-emerald-500/10 rounded px-2 py-1">
 //                             <ShieldCheck className="w-3 h-3 shrink-0" />
-//                             Approved by {m.approvedBy} on {m.approvedAt ? new Date(m.approvedAt).toLocaleDateString() : "—"}
+//                             Approved by {m.approvedBy} on {m.approvedAt ? new Date(m.approvedAt).toLocaleDateString() : "��"}
 //                           </div>
 //                         )}
 //                       </div>
@@ -291,7 +291,7 @@
 //                     <div key={m.id} className="space-y-3">
 //                       <div className="flex items-center gap-2">
 //                         <p className="text-xs font-semibold">{m.name}</p>
-//                         <span className="text-muted-foreground text-[10px]">— {m.algorithm}</span>
+//                         <span className="text-muted-foreground text-[10px]">�� {m.algorithm}</span>
 //                       </div>
 //                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 //                         <div className="space-y-2">
@@ -385,10 +385,10 @@
 //                     <tr key={m.id} className="border-b hover:bg-muted/10" data-testid={`row-available-${m.id}`}>
 //                       <td className="px-3 py-2 font-medium max-w-[160px] truncate">{m.name}</td>
 //                       <td className="px-3 py-2 text-muted-foreground">{m.algorithm}</td>
-//                       <td className="px-3 py-2 font-mono font-bold text-primary">{m.auc?.toFixed(4) ?? "—"}</td>
-//                       <td className="px-3 py-2 font-mono">{m.f1Score?.toFixed(4) ?? "—"}</td>
-//                       <td className="px-3 py-2 font-mono">{m.accuracy ? `${(m.accuracy * 100).toFixed(1)}%` : "—"}</td>
-//                       <td className="px-3 py-2 text-muted-foreground">{m.trainedAt ? new Date(m.trainedAt).toLocaleDateString() : "—"}</td>
+//                       <td className="px-3 py-2 font-mono font-bold text-primary">{m.auc?.toFixed(4) ?? "��"}</td>
+//                       <td className="px-3 py-2 font-mono">{m.f1Score?.toFixed(4) ?? "��"}</td>
+//                       <td className="px-3 py-2 font-mono">{m.accuracy ? `${(m.accuracy * 100).toFixed(1)}%` : "��"}</td>
+//                       <td className="px-3 py-2 text-muted-foreground">{m.trainedAt ? new Date(m.trainedAt).toLocaleDateString() : "��"}</td>
 //                       <td className="px-3 py-2">
 //                         <StatusBadge status={m.approvalStatus === "approved" ? "Approved" : m.approvalStatus === "rejected" ? "Rejected" : "Pending"} />
 //                       </td>
@@ -423,7 +423,7 @@
 //         {models.filter(m => m.status !== "training").length > 0 && (
 //           <div className="bg-card border rounded-lg overflow-hidden">
 //             <div className="px-4 py-3 border-b">
-//               <h3 className="text-sm font-semibold">All Models — Monitoring Overview</h3>
+//               <h3 className="text-sm font-semibold">All Models �� Monitoring Overview</h3>
 //             </div>
 //             <div className="overflow-x-auto">
 //               <table className="w-full text-xs">
@@ -447,9 +447,9 @@
 //                             ? <span className="text-emerald-500 font-medium">Yes</span>
 //                             : <span className="text-muted-foreground">No</span>}
 //                         </td>
-//                         <td className="px-3 py-2 font-mono">{m.auc?.toFixed(4) ?? "—"}</td>
+//                         <td className="px-3 py-2 font-mono">{m.auc?.toFixed(4) ?? "��"}</td>
 //                         <td className="px-3 py-2 font-mono">{predCount.toLocaleString()}</td>
-//                         <td className="px-3 py-2"><StatusBadge status={monStatus.label.split(" — ")[0]} /></td>
+//                         <td className="px-3 py-2"><StatusBadge status={monStatus.label.split(" �� ")[0]} /></td>
 //                         <td className="px-3 py-2">
 //                           <StatusBadge status={m.approvalStatus === "approved" ? "Approved" : m.approvalStatus === "rejected" ? "Rejected" : "Pending"} />
 //                         </td>
@@ -547,42 +547,37 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { OrionLayout, KpiCard, StatusBadge, OrionNav } from "@/components/orion-layout";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Trash2, PlayCircle, StopCircle, Target, CheckCircle, XCircle, AlertTriangle, Activity, TrendingUp, TrendingDown, ShieldCheck, Send, Sparkles, Brain, Info, Calendar, ArrowUpRight, ArrowDownRight, Minus, FlaskConical, Loader2 } from "lucide-react";
-import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from "recharts";
+import { Trash2, PlayCircle, StopCircle, CheckCircle, XCircle, AlertTriangle, Activity, TrendingUp, TrendingDown, ShieldCheck, Send, Sparkles, Brain, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import type { MlModel } from "@shared/schema";
 
-const CHART_COLORS = { auc: "#FFD822", accuracy: "#3b82f6", recall: "#a78bfa", psi: "#f97316", ks: "#ef4444", high: "#ef4444", med: "#f59e0b", low: "#22c55e" };
+const PROMO_COLORS = ["#FFD822","#3b82f6","#a78bfa","#f97316","#22c55e","#ec4899","#14b8a6","#f43f5e","#84cc16","#06b6d4","#8b5cf6","#fb923c","#34d399","#60a5fa","#c084fc"];
+const CUSTOM_TOOLTIP_STYLE = { backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "10px" };
 
-function DriftBar({ label, value, threshold }: { label: string; value: number; threshold: number }) {
-  const pct = Math.min(value * 100, 100);
-  const barColor = value < threshold * 0.5 ? "bg-emerald-500" : value < threshold ? "bg-amber-500" : "bg-red-500";
-  const textColor = value >= threshold ? "text-red-600" : value >= threshold * 0.5 ? "text-amber-700" : "text-emerald-700";
-  return (
-    <div className="space-y-0.5">
-      <div className="flex justify-between text-[10px]">
-        <span className="text-muted-foreground">{label}</span>
-        <span className={`font-mono font-bold ${textColor}`}>{value.toFixed(3)}</span>
-      </div>
-      <div className="h-2 bg-muted rounded overflow-hidden">
-        <div className={`h-full ${barColor} rounded`} style={{ width: `${pct}%` }} />
-      </div>
-      <div className="flex justify-end">
-        <span className="text-[9px] text-muted-foreground">threshold: {threshold}</span>
-      </div>
-    </div>
-  );
+function getPromoData(m: any) {
+  const summary = (m.modelWeights?.summary) || {};
+  const metrics = summary.metrics || {};
+  return {
+    r2:           metrics.r2   as number | undefined,
+    rmse:         metrics.rmse as number | undefined,
+    mae:          metrics.mae  as number | undefined,
+    rowCount:     summary.rowCount    as number | undefined,
+    featureCount: summary.featureCount as number | undefined,
+    promoColumns: (summary.promoColumnsUsed || []) as string[],
+    promoSummary: (summary.promoSummary || {}) as Record<string, any>,
+    totals:       (summary.totals || {}) as Record<string, any>,
+  };
 }
 
-function getMonitoringStatus(model: MlModel, predCount: number, total: number) {
-  if (!model.isDeployed) return { status: "stale", label: "Not Deployed" };
-  if (predCount === 0) return { status: "stale", label: "Stale — No Predictions" };
-  const cov = total > 0 ? predCount / total : 0;
-  if (cov < 0.3) return { status: "at risk", label: "At Risk — Low Coverage" };
-  return { status: "healthy", label: "Healthy" };
+function getPromoStatus(m: any) {
+  if (!m.isDeployed) return { status: "stale", label: "Not Deployed" };
+  const r2 = getPromoData(m).r2 ?? m.auc ?? 0;
+  if (r2 >= 0.7) return { status: "healthy", label: "Healthy" };
+  if (r2 >= 0.4) return { status: "at risk", label: "At Risk" };
+  return { status: "stale", label: "Low R²" };
 }
 
 function SeverityBadge({ severity }: { severity: string }) {
@@ -591,12 +586,12 @@ function SeverityBadge({ severity }: { severity: string }) {
   return <span className="text-[9px] px-1.5 py-0.5 rounded border border-border bg-muted text-muted-foreground font-medium">Low</span>;
 }
 
-function RecommendationCard({ rec }: { rec: any }) {
-  const borderColor = rec.severity === "high" ? "border-red-500/35 bg-red-500/8" : rec.severity === "medium" ? "border-amber-500/30 bg-amber-500/8" : "border-border bg-card";
-  const Icon = rec.icon === "trend-down" ? TrendingDown : rec.icon === "sparkle" ? Sparkles : rec.icon === "shield" ? ShieldCheck : rec.icon === "calendar" ? Calendar : AlertTriangle;
+function InsightCard({ rec }: { rec: any }) {
+  const border = rec.severity === "high" ? "border-red-500/35 bg-red-500/5" : rec.severity === "medium" ? "border-amber-500/30 bg-amber-500/5" : "border-border bg-card";
+  const Icon = rec.icon === "trend-up" ? ArrowUpRight : rec.icon === "trend-down" ? TrendingDown : rec.icon === "sparkle" ? Sparkles : rec.icon === "shield" ? ShieldCheck : AlertTriangle;
   const iconColor = rec.severity === "high" ? "text-red-600" : rec.severity === "medium" ? "text-amber-600" : "text-muted-foreground";
   return (
-    <div className={`border rounded-lg p-4 space-y-3 ${borderColor}`} data-testid={`rec-card-${rec.id}`}>
+    <div className={`border rounded-lg p-4 space-y-2 ${border}`} data-testid={`rec-card-${rec.id}`}>
       <div className="flex items-start gap-3">
         <Icon className={`w-4 h-4 mt-0.5 flex-shrink-0 ${iconColor}`} />
         <div className="flex-1 min-w-0">
@@ -608,124 +603,103 @@ function RecommendationCard({ rec }: { rec: any }) {
           <p className="text-[11px] text-muted-foreground leading-relaxed">{rec.detail}</p>
         </div>
       </div>
-      <div className="ml-7 space-y-2">
-        <div className="border border-dashed border-primary/20 rounded px-3 py-2 bg-primary/5">
+      {rec.action && (
+        <div className="ml-7 border border-dashed border-primary/20 rounded px-3 py-2 bg-primary/5">
           <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium mb-0.5">Recommended Action</p>
-          <p className="text-xs text-foreground leading-relaxed">{rec.action}</p>
+          <p className="text-xs text-foreground">{rec.action}</p>
         </div>
-        {rec.impact && (
-          <div className="flex items-start gap-1.5 text-[10px] text-emerald-700">
-            <TrendingUp className="w-3 h-3 mt-0.5 flex-shrink-0" />
-            <span>{rec.impact}</span>
-          </div>
-        )}
-      </div>
+      )}
     </div>
   );
 }
 
-function TrendIcon({ delta, threshold = 0 }: { delta: number; threshold?: number }) {
-  if (delta > threshold) return <ArrowUpRight className="w-3 h-3 text-emerald-600" />;
-  if (delta < -threshold) return <ArrowDownRight className="w-3 h-3 text-red-600" />;
-  return <Minus className="w-3 h-3 text-muted-foreground" />;
+function generateInsights(m: any): any[] {
+  const { r2, rmse, promoSummary, promoColumns } = getPromoData(m);
+  const r2Val = r2 ?? m.auc ?? 0;
+  const recs: any[] = [];
+  if (r2Val < 0.4) {
+    recs.push({ id: "r2_low", severity: "high", category: "Model Fit", icon: "shield",
+      title: "Low R² — Model Fit Needs Improvement",
+      detail: `R² of ${r2Val.toFixed(4)} means the model explains less than 40% of sales variance. Uplift estimates may be unreliable.`,
+      action: "Check for outliers in sales_units, verify price/competitor prices are populated, and consider adding more control variables." });
+  } else if (r2Val < 0.7) {
+    recs.push({ id: "r2_med", severity: "medium", category: "Model Fit", icon: "sparkle",
+      title: "Moderate R² — Room for Improvement",
+      detail: `R² of ${r2Val.toFixed(4)} is acceptable but could be stronger. Additional control features may improve precision.`,
+      action: "Add store fixed effects, competitor price ratios, or lagged sales as additional control variables." });
+  } else {
+    recs.push({ id: "r2_good", severity: "low", category: "Model Fit", icon: "shield",
+      title: "Strong Model Fit",
+      detail: `R² of ${r2Val.toFixed(4)} — the model explains a high proportion of sales variance and uplift estimates are reliable.`,
+      action: "Schedule quarterly retraining to keep the model aligned with evolving market dynamics." });
+  }
+  const mechanics = Object.entries(promoSummary);
+  if (mechanics.length > 0) {
+    const sorted = [...mechanics].sort((a: any, b: any) => (b[1].totalUpliftUnits || 0) - (a[1].totalUpliftUnits || 0));
+    const [bestMech, bestStats] = sorted[0] as [string, any];
+    recs.push({ id: "best_promo", severity: "low", category: "Promo Effectiveness", icon: "trend-up",
+      title: `Best Performer: ${bestMech}`,
+      detail: `${bestMech} delivers the highest total uplift of ${(bestStats.totalUpliftUnits || 0).toFixed(0)} units across ${bestStats.activeRows || 0} active rows (avg ${((bestStats.avgPctUplift || 0) * 100).toFixed(1)}% lift).`,
+      action: `Prioritise ${bestMech} in upcoming promotions. Analyse store/region breakdown to identify highest-ROI zones.` });
+    const [worstMech, worstStats] = sorted[sorted.length - 1] as [string, any];
+    if (sorted.length > 1 && (worstStats.totalUpliftUnits || 0) < (bestStats.totalUpliftUnits || 0) * 0.1) {
+      recs.push({ id: "weak_promo", severity: "medium", category: "Promo Effectiveness", icon: "trend-down",
+        title: `Low Impact: ${worstMech}`,
+        detail: `${worstMech} delivers only ${(worstStats.totalUpliftUnits || 0).toFixed(0)} units of uplift — significantly below the top performer.`,
+        action: `Review ${worstMech} deployment strategy. Evaluate whether trade spend is justified given low incremental volume.` });
+    }
+  }
+  if (promoColumns.length > 8) {
+    recs.push({ id: "many_promos", severity: "low", category: "Coverage", icon: "sparkle",
+      title: `${promoColumns.length} Promo Mechanics Active`,
+      detail: `The model detected and evaluated ${promoColumns.length} active promo mechanics. Comprehensive coverage enables robust portfolio-level ROI analysis.`,
+      action: "Use the ROI calculator to assign trade spend per mechanic and compare incremental revenue vs. cost." });
+  }
+  if (rmse != null && rmse > 50) {
+    recs.push({ id: "rmse_high", severity: "medium", category: "Model Fit", icon: "sparkle",
+      title: "High Prediction Error (RMSE)",
+      detail: `RMSE of ${rmse.toFixed(1)} units indicates large prediction errors. Outlier rows or missing features may be driving this.`,
+      action: "Filter extreme sales_units outliers and verify that all numeric columns are correctly populated before re-training." });
+  }
+  return recs.sort((a, b) => ({ high: 0, medium: 1, low: 2 }[a.severity as string] ?? 3) - ({ high: 0, medium: 1, low: 2 }[b.severity as string] ?? 3));
 }
-
-const CUSTOM_TOOLTIP_STYLE = { backgroundColor: "hsl(var(--card))", border: "1px solid hsl(var(--border))", borderRadius: "6px", fontSize: "10px" };
 
 export default function OrionDeployPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
-  const [scoringModelId, setScoringModelId] = useState<number | null>(null);
   const [deleteId, setDeleteId] = useState<number | null>(null);
   const [approvalModel, setApprovalModel] = useState<MlModel | null>(null);
   const [approvalNotes, setApprovalNotes] = useState("");
   const [approvalAction, setApprovalAction] = useState<"approve" | "reject">("approve");
   const [monitorModelId, setMonitorModelId] = useState<number | null>(null);
   const [monitorTab, setMonitorTab] = useState<"health" | "trends" | "drivers" | "insights">("health");
-  const [prodDatasetId, setProdDatasetId] = useState<number | null>(null);
 
-  const { data: modelsRaw = [] } = useQuery<MlModel[]>({ queryKey: ["/api/models"] });
-  const { data: predictions = [] } = useQuery<any[]>({ queryKey: ["/api/predictions"] });
-  const { data: custStats } = useQuery<{ total: number; active: number; churned: number }>({ queryKey: ["/api/customers/stats"] });
-  const { data: allDatasets = [] } = useQuery<any[]>({ queryKey: ["/api/datasets"] });
+  const { data: modelsRaw = [] } = useQuery<MlModel[]>({ queryKey: ["/api/cpg/promoUplift/models"] });
 
   const models = modelsRaw as any[];
   const deployedModels = models.filter(m => m.isDeployed);
   const availableModels = models.filter(m => !m.isDeployed && m.status === "trained");
-  
-  // Total predictions = predictions from training models only (same as ML Overview)
-  const trainingModelIds = new Set(models.filter(m => !m.isDeployed).map(m => m.id));
-  const totalPredCount = (predictions as any[]).filter((p: any) => trainingModelIds.has(p.modelId)).length;
-  
-  const totalActiveCustomers = custStats?.active ?? 500;
 
   const activeMonitorId = monitorModelId ?? deployedModels[0]?.id ?? null;
-
-  const { data: monitoringData, isLoading: monitorLoading } = useQuery<any>({
-    queryKey: ["/api/monitoring", activeMonitorId, prodDatasetId],
-    enabled: !!activeMonitorId,
-    queryFn: async () => {
-      const url = prodDatasetId
-        ? `/api/monitoring/${activeMonitorId}?prodDatasetId=${prodDatasetId}`
-        : `/api/monitoring/${activeMonitorId}`;
-      const res = await fetch(url, { credentials: "include" });
-      if (!res.ok) throw new Error(await res.text());
-      return res.json();
-    },
-  });
-
-  function predCountForModel(modelId: number) {
-    return (predictions as any[]).filter((p: any) => p.modelId === modelId).length;
-  }
+  const activeMonitorModel = models.find(m => m.id === activeMonitorId);
+  const activePromoData = activeMonitorModel ? getPromoData(activeMonitorModel) : null;
 
   const deployMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/models/${id}/deploy`, {}),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/models"] }); toast({ title: "Model deployed" }); },
+    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/promoUplift/models/${id}/deploy`, {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/models"] }); toast({ title: "Model deployed" }); },
     onError: (e: any) => toast({ title: "Deploy failed", description: e.message, variant: "destructive" }),
   });
 
   const undeployMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/models/${id}/undeploy`, {}),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/models"] }); toast({ title: "Model undeployed" }); },
+    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/promoUplift/models/${id}/undeploy`, {}),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/models"] }); toast({ title: "Model undeployed" }); },
     onError: (e: any) => toast({ title: "Undeploy failed", description: e.message, variant: "destructive" }),
   });
 
-  const scoreMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/models/${id}/predict-customers`, prodDatasetId ? { prodDatasetId } : {}),
-    onSuccess: (data: any) => {
-      qc.invalidateQueries({ queryKey: ["/api/predictions"] });
-      qc.invalidateQueries({ queryKey: ["/api/monitoring", scoringModelId] });
-      const title = prodDatasetId && data.prodAuc != null
-        ? `Scored ${data.predicted} customers (prod) · AUC ${data.prodAuc.toFixed(4)} · Acc ${((data.prodAccuracy ?? 0) * 100).toFixed(1)}%`
-        : `Scored ${data.predicted} customers`;
-      toast({ title });
-      setScoringModelId(null);
-    },
-    onError: (e: any) => { toast({ title: "Scoring failed", description: e.message, variant: "destructive" }); setScoringModelId(null); },
-  });
-
-  const evalProdMut = useMutation({
-    mutationFn: ({ modelId, prodDatasetId }: { modelId: number; prodDatasetId: number }) =>
-      apiRequest("POST", `/api/models/${modelId}/score-production`, { prodDatasetId }),
-    onSuccess: (data: any) => {
-      qc.invalidateQueries({ queryKey: ["/api/predictions"] });
-      qc.invalidateQueries({ queryKey: ["/api/monitoring", activeMonitorId, prodDatasetId] });
-      qc.invalidateQueries({ queryKey: ["/api/models"] });
-      const m = data.metrics || {};
-      const parts = [`${data.predicted} predictions`];
-      if (m.auc != null) parts.push(`AUC ${m.auc.toFixed(4)}`);
-      if (m.accuracy != null) parts.push(`Acc ${(m.accuracy * 100).toFixed(1)}%`);
-      if (m.recall != null) parts.push(`Recall ${(m.recall * 100).toFixed(1)}%`);
-      toast({ title: `Prod evaluation complete · ${parts.join(" · ")}` });
-    },
-    onError: (e: any) => toast({ title: "Evaluation failed", description: e.message, variant: "destructive" }),
-  });
-
   const deleteMut = useMutation({
-    mutationFn: (id: number) => apiRequest("DELETE", `/api/models/${id}`),
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/cpg/promoUplift/models/${id}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/predictions"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/models"] });
       toast({ title: "Model deleted" });
       setDeleteId(null);
     },
@@ -734,9 +708,9 @@ export default function OrionDeployPage() {
 
   const approveMut = useMutation({
     mutationFn: ({ id, notes, action }: { id: number; notes: string; action: string }) =>
-      apiRequest("POST", `/api/models/${id}/approve`, { approvedBy: "ml-ops-lead", approvalNotes: notes, action }),
+      apiRequest("POST", `/api/cpg/promoUplift/models/${id}/approve`, { approvedBy: "ml-ops-lead", approvalNotes: notes, action }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/models"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/models"] });
       toast({ title: `Model ${approvalAction === "approve" ? "approved" : "rejected"}` });
       setApprovalModel(null);
       setApprovalNotes("");
@@ -744,33 +718,29 @@ export default function OrionDeployPage() {
     onError: (e: any) => toast({ title: "Approval failed", description: e.message, variant: "destructive" }),
   });
 
-  function getDriftMetrics(m: any) {
-    // Use real values from monitoring API when available so KPI cards and drift bars stay in sync
-    const realPsi = monitoringData?.summary?.latestPsi;
-    const realKs = monitoringData?.summary?.latestKs;
-    const psi = realPsi !== undefined ? parseFloat(realPsi.toFixed(3)) : parseFloat(((1 - (m.auc || 0.8)) * 0.4 + 0.02).toFixed(3));
-    const ks = realKs !== undefined ? parseFloat(realKs.toFixed(3)) : parseFloat(((m.accuracy || 0.8) * 0.15).toFixed(3));
-    const featureDrift = parseFloat((psi * 1.2).toFixed(3));
-    const targetDrift = parseFloat((ks * 0.8).toFixed(3));
-    const predDrift = parseFloat((psi * 0.9).toFixed(3));
-    const segmentDrift = parseFloat(((1 - (m.recall || 0.8)) * 0.25).toFixed(3));
-    return { psi, ks, featureDrift, targetDrift, predDrift, segmentDrift };
-  }
-
-  const avgAuc = deployedModels.length ? parseFloat((deployedModels.reduce((s, m) => s + (m.auc || 0), 0) / deployedModels.length).toFixed(4)) : 0;
-  const healthyCount = deployedModels.filter(m => getMonitoringStatus(m, predCountForModel(m.id), totalActiveCustomers).status === "healthy").length;
-  const atRiskCount = deployedModels.filter(m => getMonitoringStatus(m, predCountForModel(m.id), totalActiveCustomers).status === "at risk").length;
-  const staleCount = deployedModels.filter(m => getMonitoringStatus(m, predCountForModel(m.id), totalActiveCustomers).status === "stale").length;
+  const avgR2 = deployedModels.length
+    ? parseFloat((deployedModels.reduce((s, m) => s + (getPromoData(m).r2 ?? m.auc ?? 0), 0) / deployedModels.length).toFixed(4))
+    : 0;
+  const healthyCount = deployedModels.filter(m => getPromoStatus(m).status === "healthy").length;
+  const atRiskCount  = deployedModels.filter(m => getPromoStatus(m).status === "at risk").length;
+  const staleCount   = deployedModels.filter(m => getPromoStatus(m).status === "stale").length;
   const deleteTarget = models.find(m => m.id === deleteId);
 
-  const activeMonitorModel = models.find(m => m.id === activeMonitorId);
-  const summaryData = monitoringData?.summary;
-  const highSeverityCount = (monitoringData?.recommendations || []).filter((r: any) => r.severity === "high").length;
+  const promoChartData = activePromoData
+    ? Object.entries(activePromoData.promoSummary)
+        .map(([name, stats]: [string, any]) => ({
+          name,
+          totalUplift: parseFloat((stats.totalUpliftUnits || 0).toFixed(1)),
+          avgPctUplift: parseFloat(((stats.avgPctUplift || 0) * 100).toFixed(2)),
+          activeRows: stats.activeRows || 0,
+        }))
+        .sort((a, b) => b.totalUplift - a.totalUplift)
+    : [];
 
   return (
-    <OrionLayout title="Deploy & Scoring" subtitle="Production model management, drift monitoring, and AI-powered observability">
+    <OrionLayout title="Deploy & Scoring" subtitle="Production model management, uplift monitoring, and AI-powered observability">
       <div className="space-y-4">
-        <OrionNav current="/orion/deploy" />
+        <OrionNav current="/cpg/promo-uplift/orion/deploy" basePath="/cpg/promo-uplift/orion" />
 
         {/* KPI Row */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
@@ -778,8 +748,8 @@ export default function OrionDeployPage() {
           <KpiCard label="Healthy" value={healthyCount} color="green" testId="kpi-healthy" />
           <KpiCard label="At Risk" value={atRiskCount} color={atRiskCount > 0 ? "amber" : "green"} testId="kpi-at-risk" />
           <KpiCard label="Stale" value={staleCount} color={staleCount > 0 ? "amber" : "green"} testId="kpi-stale" />
-          <KpiCard label="Avg AUC" value={avgAuc ? avgAuc.toFixed(4) : "—"} color="blue" testId="kpi-auc" />
-          <KpiCard label="Total Predictions" value={totalPredCount.toLocaleString()} testId="kpi-predictions" />
+          <KpiCard label="Avg R²" value={avgR2 ? avgR2.toFixed(4) : "—"} color="blue" testId="kpi-r2" />
+          <KpiCard label="Promo Runs" value={String(models.filter(m => m.status === "trained").length)} testId="kpi-runs" />
         </div>
 
         {/* ── PRODUCTION MODELS ── */}
@@ -797,44 +767,29 @@ export default function OrionDeployPage() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b bg-muted/30">
-                    {["Model", "Algorithm", "AUC", "Accuracy", "Predictions", "Deployed", "Status", "Approval", "Actions"].map(h => (
+                    {["Model", "Algorithm", "R²", "RMSE", "Promo Cols", "Deployed", "Status", "Approval", "Actions"].map(h => (
                       <th key={h} className="text-left px-3 py-2 text-muted-foreground font-medium">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {deployedModels.map(m => {
-                    const predCount = predCountForModel(m.id);
-                    const monStatus = getMonitoringStatus(m, predCount, totalActiveCustomers);
-                    const isActiveMonitor = m.id === activeMonitorId;
-                    const displayAuc = (isActiveMonitor && summaryData?.prodAuc != null) ? summaryData.prodAuc : m.auc;
-                    const displayAcc = (isActiveMonitor && summaryData?.prodAccuracy != null) ? summaryData.prodAccuracy : m.accuracy;
+                    const pd = getPromoData(m);
+                    const monStatus = getPromoStatus(m);
                     return (
                       <tr key={m.id} className="border-b hover:bg-muted/10" data-testid={`row-deployed-${m.id}`}>
                         <td className="px-3 py-2 font-medium max-w-[160px] truncate">{m.name}</td>
                         <td className="px-3 py-2 text-muted-foreground">{m.algorithm}</td>
-                        <td className="px-3 py-2 font-mono font-bold text-primary">
-                          {displayAuc?.toFixed(4) ?? "—"}
-                          {isActiveMonitor && summaryData?.prodAuc != null && <span className="ml-1 text-[8px] text-blue-500">prod</span>}
-                        </td>
-                        <td className="px-3 py-2 font-mono">
-                          {displayAcc ? `${(displayAcc * 100).toFixed(1)}%` : "—"}
-                          {isActiveMonitor && summaryData?.prodAccuracy != null && <span className="ml-1 text-[8px] text-blue-500">prod</span>}
-                        </td>
-                        <td className="px-3 py-2 font-mono">{predCount.toLocaleString()}</td>
+                        <td className="px-3 py-2 font-mono font-bold text-primary">{(pd.r2 ?? m.auc)?.toFixed(4) ?? "—"}</td>
+                        <td className="px-3 py-2 font-mono">{pd.rmse != null ? pd.rmse.toFixed(3) : "—"}</td>
+                        <td className="px-3 py-2 font-mono">{pd.promoColumns.length > 0 ? pd.promoColumns.length : "—"}</td>
                         <td className="px-3 py-2 text-muted-foreground">{m.deployedAt ? new Date(m.deployedAt).toLocaleDateString() : "—"}</td>
-                        <td className="px-3 py-2"><StatusBadge status={monStatus.label.split(" — ")[0]} /></td>
+                        <td className="px-3 py-2"><StatusBadge status={monStatus.label} /></td>
                         <td className="px-3 py-2">
                           <StatusBadge status={m.approvalStatus === "approved" ? "Approved" : m.approvalStatus === "rejected" ? "Rejected" : "Pending"} />
                         </td>
                         <td className="px-3 py-2">
                           <div className="flex items-center gap-1">
-                            <Button size="icon" variant="ghost" className={`h-6 w-6 hover:bg-primary/10 hover:text-primary${prodDatasetId ? " ring-1 ring-blue-500/50" : ""}`}
-                              onClick={() => { setScoringModelId(m.id); scoreMut.mutate(m.id); }}
-                              disabled={scoreMut.isPending && scoringModelId === m.id}
-                              title={prodDatasetId ? "Score customers on production data" : "Score customers"} data-testid={`button-score-${m.id}`}>
-                              <Target className="w-3 h-3" />
-                            </Button>
                             <Button size="icon" variant="ghost" className="h-6 w-6 hover:bg-amber-500/10 hover:text-amber-500"
                               onClick={() => { setApprovalModel(m); setApprovalNotes(""); setApprovalAction(m.approvalStatus === "approved" ? "reject" : "approve"); }}
                               title="Approve/reject" data-testid={`button-approve-${m.id}`}>
@@ -866,335 +821,214 @@ export default function OrionDeployPage() {
               <div className="flex items-center gap-2">
                 <Activity className="w-4 h-4 text-blue-500" />
                 <h3 className="text-sm font-semibold">Model Observability</h3>
-                {highSeverityCount > 0 && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-500/15 text-red-400 font-bold border border-red-500/20">{highSeverityCount} alert{highSeverityCount > 1 ? "s" : ""}</span>
-                )}
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 {deployedModels.length > 1 && (
-                  <select
-                    className="text-[10px] bg-muted border border-border rounded px-2 py-1 text-foreground"
+                  <select className="text-[10px] bg-muted border border-border rounded px-2 py-1 text-foreground"
                     value={activeMonitorId ?? ""}
                     onChange={e => { setMonitorModelId(Number(e.target.value)); setMonitorTab("health"); }}
-                    data-testid="select-monitor-model"
-                  >
+                    data-testid="select-monitor-model">
                     {deployedModels.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
                   </select>
                 )}
-                {/* Production dataset selector */}
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-muted-foreground">Production data:</span>
-                  <select
-                    className="text-[10px] bg-muted border border-border rounded px-2 py-1 text-foreground"
-                    value={prodDatasetId ?? ""}
-                    onChange={e => setProdDatasetId(e.target.value ? Number(e.target.value) : null)}
-                    data-testid="select-prod-dataset"
-                  >
-                    <option value="">— model predictions —</option>
-                    {(allDatasets as any[]).map((ds: any) => (
-                      <option key={ds.id} value={ds.id}>{ds.name} ({ds.rowCount?.toLocaleString()} rows)</option>
-                    ))}
-                  </select>
-                  {/* Evaluate on Prod button — runs feature engineering + model on prod data */}
-                  {prodDatasetId && activeMonitorId && (
-                    <button
-                      onClick={() => evalProdMut.mutate({ modelId: activeMonitorId, prodDatasetId })}
-                      disabled={evalProdMut.isPending}
-                      title="Run model on production data: applies full feature pipeline, scores prod accounts, computes AUC/Accuracy/Recall"
-                      className="flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
-                      data-testid="button-evaluate-prod"
-                    >
-                      {evalProdMut.isPending
-                        ? <><Loader2 className="w-3 h-3 animate-spin" /> Evaluating…</>
-                        : <><FlaskConical className="w-3 h-3" /> Evaluate on Prod</>}
-                    </button>
-                  )}
-                </div>
-                {summaryData?.prodDataset && (
-                  <span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-600 border border-blue-500/20 font-medium">
-                    Scoring: {summaryData.prodDataset.name} · {summaryData.prodDataset.rows?.toLocaleString()} rows
-                    {summaryData.prodDataset.churnPct > 0 ? ` · ${summaryData.prodDataset.churnPct}% historical churn` : ""}
-                  </span>
-                )}
                 <div className="flex gap-1">
-                  {([
-                    { id: "health", label: "Health" },
-                    { id: "trends", label: "Trends" },
-                    { id: "drivers", label: "Drivers" },
-                    { id: "insights", label: "Insights" },
-                  ] as const).map(t => (
-                    <button key={t.id} onClick={() => setMonitorTab(t.id)} data-testid={`tab-monitor-${t.id}`}
-                      className={`px-3 py-1 text-[10px] rounded font-medium transition-colors ${monitorTab === t.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}>
-                      {t.label}
+                  {(["health","trends","drivers","insights"] as const).map(t => (
+                    <button key={t} onClick={() => setMonitorTab(t)} data-testid={`tab-monitor-${t}`}
+                      className={`px-3 py-1 text-[10px] rounded font-medium transition-colors ${monitorTab === t ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"}`}>
+                      {t.charAt(0).toUpperCase() + t.slice(1)}
                     </button>
                   ))}
                 </div>
               </div>
             </div>
 
-            {monitorLoading && (
-              <div className="p-8 text-center text-xs text-muted-foreground animate-pulse">Loading monitoring data…</div>
-            )}
-
             {/* ── HEALTH TAB ── */}
-            {!monitorLoading && monitorTab === "health" && (
+            {monitorTab === "health" && activePromoData && activeMonitorModel && (
               <div className="p-4 space-y-4">
-                {activeMonitorModel && summaryData && (
-                  <>
-                    {/* Summary KPIs */}
-                    <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                      <div className="bg-muted/30 border rounded-lg p-3 text-center">
-                        <p className="text-[10px] text-muted-foreground">
-                          AUC {summaryData.prodAuc != null ? <span className="text-blue-500">(prod)</span> : "(Training)"}
-                        </p>
-                        <p className="text-xl font-mono font-bold text-primary">
-                          {(summaryData.prodAuc ?? summaryData.latestAuc)?.toFixed(4)}
-                        </p>
-                        {summaryData.prodAuc != null ? (
-                          <p className="text-[9px] text-blue-500 mt-0.5">vs training: {summaryData.latestAuc?.toFixed(4)}</p>
-                        ) : null}
-                      </div>
-                      <div className="bg-muted/30 border rounded-lg p-3 text-center">
-                        <p className="text-[10px] text-muted-foreground">
-                          Recall {summaryData.prodRecall != null ? <span className="text-blue-500">(prod)</span> : "(Training)"}
-                        </p>
-                        <p className="text-xl font-mono font-bold">
-                          {((summaryData.prodRecall ?? summaryData.latestRecall) * 100).toFixed(1)}%
-                        </p>
-                        {summaryData.prodRecall != null ? (
-                          <p className="text-[9px] text-blue-500 mt-0.5">vs training: {(summaryData.latestRecall * 100).toFixed(1)}%</p>
-                        ) : null}
-                      </div>
-                      <div className="bg-muted/30 border rounded-lg p-3 text-center">
-                        <p className="text-[10px] text-muted-foreground">PSI</p>
-                        <p className={`text-xl font-mono font-bold ${summaryData.latestPsi > 0.2 ? "text-red-600" : summaryData.latestPsi > 0.1 ? "text-amber-700" : "text-emerald-700"}`}>{summaryData.latestPsi?.toFixed(3)}</p>
-                        <p className="text-[9px] text-muted-foreground mt-0.5">threshold: 0.200</p>
-                      </div>
-                      <div className="bg-muted/30 border rounded-lg p-3 text-center">
-                        <p className="text-[10px] text-muted-foreground">KS Stat</p>
-                        <p className={`text-xl font-mono font-bold ${summaryData.latestKs > 0.1 ? "text-amber-700" : "text-emerald-700"}`}>{summaryData.latestKs?.toFixed(3)}</p>
-                        <p className="text-[9px] text-muted-foreground mt-0.5">threshold: 0.100</p>
-                      </div>
-                      <div className="bg-muted/30 border rounded-lg p-3 text-center">
-                        <p className="text-[10px] text-muted-foreground">High Risk %</p>
-                        <p className="text-xl font-mono font-bold text-amber-700">{summaryData.latestHighRiskPct?.toFixed(1)}%</p>
-                      </div>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <div className="bg-muted/30 border rounded-lg p-3 text-center">
+                    <p className="text-[10px] text-muted-foreground">R² Score</p>
+                    <p className={`text-xl font-mono font-bold ${(activePromoData.r2 ?? 0) >= 0.7 ? "text-emerald-700" : (activePromoData.r2 ?? 0) >= 0.4 ? "text-amber-700" : "text-red-600"}`}>
+                      {(activePromoData.r2 ?? activeMonitorModel.auc)?.toFixed(4) ?? "—"}
+                    </p>
+                    <p className="text-[9px] text-muted-foreground mt-0.5">explains variance</p>
+                  </div>
+                  <div className="bg-muted/30 border rounded-lg p-3 text-center">
+                    <p className="text-[10px] text-muted-foreground">RMSE</p>
+                    <p className="text-xl font-mono font-bold">{activePromoData.rmse?.toFixed(3) ?? "—"}</p>
+                    <p className="text-[9px] text-muted-foreground mt-0.5">avg prediction error</p>
+                  </div>
+                  <div className="bg-muted/30 border rounded-lg p-3 text-center">
+                    <p className="text-[10px] text-muted-foreground">MAE</p>
+                    <p className="text-xl font-mono font-bold">{activePromoData.mae?.toFixed(3) ?? "—"}</p>
+                    <p className="text-[9px] text-muted-foreground mt-0.5">mean abs error</p>
+                  </div>
+                  <div className="bg-muted/30 border rounded-lg p-3 text-center">
+                    <p className="text-[10px] text-muted-foreground">Row Count</p>
+                    <p className="text-xl font-mono font-bold">{activePromoData.rowCount?.toLocaleString() ?? "—"}</p>
+                    <p className="text-[9px] text-muted-foreground mt-0.5">training rows</p>
+                  </div>
+                  <div className="bg-muted/30 border rounded-lg p-3 text-center">
+                    <p className="text-[10px] text-muted-foreground">Promo Mechanics</p>
+                    <p className="text-xl font-mono font-bold text-primary">{activePromoData.promoColumns.length}</p>
+                    <p className="text-[9px] text-muted-foreground mt-0.5">active evaluated</p>
+                  </div>
+                </div>
+                {Object.keys(activePromoData.promoSummary).length > 0 && (
+                  <div className="border rounded-lg overflow-hidden">
+                    <div className="px-3 py-2 border-b bg-muted/20">
+                      <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider">Promo Mechanics — Uplift Summary</p>
                     </div>
-
-                    {/* Per-model drift bars */}
-                    {deployedModels.filter(m => m.id === activeMonitorId).map(m => {
-                      const drift = getDriftMetrics(m);
-                      const predCount = predCountForModel(m.id);
-                      const coverage = totalActiveCustomers > 0 ? ((predCount / totalActiveCustomers) * 100).toFixed(1) : "0.0";
-                      const driftAlert = drift.psi > 0.2 || drift.featureDrift > 0.25;
-                      return (
-                        <div key={m.id} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="border rounded-lg p-4 space-y-3">
-                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Distribution Drift</p>
-                            <DriftBar label="PSI (Population Stability)" value={drift.psi} threshold={0.2} />
-                            <DriftBar label="KS Statistic" value={drift.ks} threshold={0.1} />
-                            <DriftBar label="Feature Drift Score" value={drift.featureDrift} threshold={0.25} />
-                          </div>
-                          <div className="border rounded-lg p-4 space-y-3">
-                            <p className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">Coverage & Prediction Health</p>
-                            <DriftBar label="Target Drift" value={drift.targetDrift} threshold={0.15} />
-                            <DriftBar label="Prediction Distribution Drift" value={drift.predDrift} threshold={0.2} />
-                            <DriftBar label="Segment Drift" value={drift.segmentDrift} threshold={0.1} />
-                            <div className="flex items-center justify-between text-[10px] pt-1 border-t">
-                              <span className="text-muted-foreground">Prediction coverage</span>
-                              <span className="font-mono font-bold">{predCount.toLocaleString()} / {totalActiveCustomers} ({coverage}%)</span>
-                            </div>
-                          </div>
-                          {driftAlert && (
-                            <div className="md:col-span-2 flex items-center gap-1.5 text-[11px] text-amber-800 bg-amber-500/10 border border-amber-500/30 rounded px-3 py-2">
-                              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
-                              Drift alert — PSI {drift.psi.toFixed(3)} exceeds threshold 0.200. Consider retraining. See Insights tab for recommendations.
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b bg-muted/10">
+                            {["Mechanic","Active Rows","Total Uplift Units","Avg % Uplift"].map(h => (
+                              <th key={h} className="text-left px-3 py-2 text-muted-foreground font-medium">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {Object.entries(activePromoData.promoSummary)
+                            .sort((a: any, b: any) => (b[1].totalUpliftUnits || 0) - (a[1].totalUpliftUnits || 0))
+                            .map(([mech, stats]: [string, any]) => (
+                              <tr key={mech} className="border-b hover:bg-muted/10">
+                                <td className="px-3 py-2 font-mono font-semibold text-primary">{mech}</td>
+                                <td className="px-3 py-2 font-mono">{(stats.activeRows || 0).toLocaleString()}</td>
+                                <td className="px-3 py-2 font-mono font-bold">
+                                  <span className={(stats.totalUpliftUnits || 0) >= 0 ? "text-emerald-700" : "text-red-600"}>
+                                    {(stats.totalUpliftUnits || 0) >= 0 ? "+" : ""}{(stats.totalUpliftUnits || 0).toFixed(1)}
+                                  </span>
+                                </td>
+                                <td className="px-3 py-2 font-mono">
+                                  <span className={(stats.avgPctUplift || 0) >= 0 ? "text-emerald-700" : "text-red-600"}>
+                                    {(stats.avgPctUplift || 0) >= 0 ? "+" : ""}{((stats.avgPctUplift || 0) * 100).toFixed(2)}%
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
                 )}
               </div>
             )}
 
             {/* ── TRENDS TAB ── */}
-            {!monitorLoading && monitorTab === "trends" && monitoringData && (
+            {monitorTab === "trends" && activePromoData && (
               <div className="p-4 space-y-6">
-                {/* Performance Trend */}
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-semibold flex items-center gap-1.5"><TrendingUp className="w-3.5 h-3.5 text-primary" />Performance Metrics — Monthly Trend</h4>
-                    <span className="text-[10px] text-muted-foreground">Model: {activeMonitorModel?.name}</span>
-                  </div>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <LineChart data={monitoringData.weeklyMetrics} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
-                      <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
-                      <YAxis
-                        domain={([dataMin, dataMax]: [number, number]) => {
-                          const pad = Math.max((dataMax - dataMin) * 0.15, 0.02);
-                          return [Math.max(0, parseFloat((dataMin - pad).toFixed(2))), Math.min(1, parseFloat((dataMax + pad).toFixed(2)))];
-                        }}
-                        tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
-                        tickFormatter={v => v.toFixed(2)}
-                      />
-                      <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} formatter={(v: any) => (v as number).toFixed(4)} />
-                      <Legend wrapperStyle={{ fontSize: "10px" }} />
-                      <Line type="monotone" dataKey="auc" stroke={CHART_COLORS.auc} strokeWidth={2} dot={{ r: 3, fill: CHART_COLORS.auc }} name="AUC" />
-                      <Line type="monotone" dataKey="accuracy" stroke={CHART_COLORS.accuracy} strokeWidth={2} dot={{ r: 3, fill: CHART_COLORS.accuracy }} name="Accuracy" />
-                      <Line type="monotone" dataKey="recall" stroke={CHART_COLORS.recall} strokeWidth={2} dot={{ r: 3, fill: CHART_COLORS.recall }} name="Recall" strokeDasharray="4 2" />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-
-                {/* Drift Trend */}
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold flex items-center gap-1.5"><AlertTriangle className="w-3.5 h-3.5 text-amber-400" />Drift Metrics — PSI & KS Over Time</h4>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <AreaChart data={monitoringData.weeklyMetrics} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="psiGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={CHART_COLORS.psi} stopOpacity={0.35} />
-                          <stop offset="95%" stopColor={CHART_COLORS.psi} stopOpacity={0.03} />
-                        </linearGradient>
-                        <linearGradient id="ksGrad" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={CHART_COLORS.ks} stopOpacity={0.30} />
-                          <stop offset="95%" stopColor={CHART_COLORS.ks} stopOpacity={0.03} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
-                      <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
-                      <YAxis
-                        domain={([, dataMax]: [number, number]) => [0, Math.max(parseFloat((dataMax * 1.2).toFixed(2)), 0.05)]}
-                        tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
-                        tickFormatter={v => v.toFixed(3)}
-                      />
-                      <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} formatter={(v: any) => (v as number).toFixed(4)} />
-                      <Legend wrapperStyle={{ fontSize: "10px" }} />
-                      <Area type="monotone" dataKey="psi" stroke={CHART_COLORS.psi} fill="url(#psiGrad)" strokeWidth={2} dot={{ r: 3 }} name="PSI" />
-                      <Area type="monotone" dataKey="ks" stroke={CHART_COLORS.ks} fill="url(#ksGrad)" strokeWidth={2} dot={{ r: 3 }} name="KS Stat" />
-                    </AreaChart>
-                  </ResponsiveContainer>
-                  <div className="flex gap-4 text-[10px] text-muted-foreground">
-                    <span>PSI threshold: <strong className="text-amber-400">0.200</strong></span>
-                    <span>KS threshold: <strong className="text-amber-400">0.100</strong></span>
-                    <span>Values above threshold indicate distribution drift requiring attention.</span>
-                  </div>
-                </div>
-
-                {/* Risk Distribution Over Time */}
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold flex items-center gap-1.5"><Activity className="w-3.5 h-3.5 text-blue-400" />Risk Mix by Period</h4>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <BarChart data={monitoringData.weeklyMetrics} margin={{ top: 8, right: 12, left: -10, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
-                      <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
-                      <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={v => `${v}%`} domain={[0, 100]} />
-                      <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} formatter={(v: any) => `${(v as number).toFixed(1)}%`} />
-                      <Legend wrapperStyle={{ fontSize: "10px" }} />
-                      <Bar dataKey="highRiskPct" stackId="a" fill={CHART_COLORS.high} name="High Risk %" opacity={0.85} />
-                      <Bar dataKey="medRiskPct" stackId="a" fill={CHART_COLORS.med} name="Medium Risk %" opacity={0.85} />
-                      <Bar dataKey="lowRiskPct" stackId="a" fill={CHART_COLORS.low} name="Low Risk %" opacity={0.85} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
+                {promoChartData.length > 0 ? (
+                  <>
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-semibold flex items-center gap-1.5">
+                        <TrendingUp className="w-3.5 h-3.5 text-primary" />Total Uplift Units by Promo Mechanic
+                      </h4>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={promoChartData} margin={{ top: 8, right: 12, left: 0, bottom: 50 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
+                          <XAxis dataKey="name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-35} textAnchor="end" interval={0} />
+                          <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
+                          <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} formatter={(v: any) => `${(v as number).toFixed(1)} units`} />
+                          <Bar dataKey="totalUplift" name="Total Uplift Units" radius={[3,3,0,0]}>
+                            {promoChartData.map((_: any, idx: number) => <Cell key={idx} fill={PROMO_COLORS[idx % PROMO_COLORS.length]} />)}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="space-y-2">
+                      <h4 className="text-xs font-semibold flex items-center gap-1.5">
+                        <Activity className="w-3.5 h-3.5 text-blue-400" />Average % Uplift by Promo Mechanic
+                      </h4>
+                      <ResponsiveContainer width="100%" height={260}>
+                        <BarChart data={promoChartData} margin={{ top: 8, right: 12, left: 0, bottom: 50 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
+                          <XAxis dataKey="name" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} angle={-35} textAnchor="end" interval={0} />
+                          <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={v => `${v}%`} />
+                          <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} formatter={(v: any) => `${(v as number).toFixed(2)}%`} />
+                          <Bar dataKey="avgPctUplift" name="Avg % Uplift" radius={[3,3,0,0]}>
+                            {promoChartData.map((_: any, idx: number) => <Cell key={idx} fill={PROMO_COLORS[idx % PROMO_COLORS.length]} />)}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </>
+                ) : (
+                  <div className="p-8 text-center text-xs text-muted-foreground">No promo mechanics data available for this model.</div>
+                )}
               </div>
             )}
 
             {/* ── DRIVERS TAB ── */}
-            {!monitorLoading && monitorTab === "drivers" && monitoringData && (
+            {monitorTab === "drivers" && activePromoData && (
               <div className="p-4 space-y-5">
-                {/* Driver change summary */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  {(monitoringData.driverChanges || []).slice(0, 6).map((d: any) => (
-                    <div key={d.name} className={`border rounded-lg p-3 ${d.trend === "rising" ? "border-emerald-500/30 bg-emerald-500/8" : d.trend === "declining" ? "border-amber-500/30 bg-amber-500/8" : ""}`}
-                      data-testid={`driver-card-${d.name}`}>
-                      <div className="flex items-start justify-between mb-2">
-                        <div>
-                          <p className="text-[11px] font-mono font-semibold text-blue-700 truncate">{d.name}</p>
-                          <p className="text-[9px] text-muted-foreground capitalize">{d.displayName}</p>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          {d.trend === "rising" && <><ArrowUpRight className="w-3.5 h-3.5 text-emerald-700" /><span className="text-[9px] text-emerald-700 font-bold">Rising</span></>}
-                          {d.trend === "declining" && <><ArrowDownRight className="w-3.5 h-3.5 text-amber-700" /><span className="text-[9px] text-amber-700 font-bold">Declining</span></>}
-                          {d.trend === "stable" && <><Minus className="w-3 h-3 text-muted-foreground" /><span className="text-[9px] text-muted-foreground">Stable</span></>}
-                        </div>
+                {promoChartData.length > 0 ? (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                      {promoChartData.slice(0, 6).map((d: any, idx: number) => {
+                        const maxUplift = promoChartData[0]?.totalUplift || 1;
+                        const pct = Math.max(0, Math.min(100, (d.totalUplift / maxUplift) * 100));
+                        return (
+                          <div key={d.name} className="border rounded-lg p-3 space-y-2" data-testid={`driver-card-${d.name}`}>
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <p className="text-[11px] font-mono font-semibold text-primary">{d.name}</p>
+                                <p className="text-[9px] text-muted-foreground">{d.activeRows.toLocaleString()} active rows</p>
+                              </div>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-700 border border-emerald-500/20 font-bold">#{idx + 1}</span>
+                            </div>
+                            <div className="h-2 bg-muted rounded overflow-hidden">
+                              <div className="h-full rounded bg-primary" style={{ width: `${pct}%` }} />
+                            </div>
+                            <div className="flex justify-between text-[9px]">
+                              <span className="text-muted-foreground">Uplift: <span className="font-mono text-emerald-700 font-bold">{d.totalUplift >= 0 ? "+" : ""}{d.totalUplift.toFixed(1)} units</span></span>
+                              <span className="text-muted-foreground font-mono">{d.avgPctUplift >= 0 ? "+" : ""}{d.avgPctUplift.toFixed(2)}%</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="border border-emerald-500/30 rounded-lg p-3 bg-emerald-500/5">
+                        <h5 className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+                          <ArrowUpRight className="w-3 h-3" />Top Performing Mechanics
+                        </h5>
+                        {promoChartData.filter(d => d.totalUplift > 0).slice(0, 5).map(d => (
+                          <div key={d.name} className="flex justify-between text-[10px] py-0.5">
+                            <span className="font-mono text-emerald-800">{d.name}</span>
+                            <span className="text-emerald-700 font-bold">+{d.totalUplift.toFixed(1)} units</span>
+                          </div>
+                        ))}
                       </div>
-                      <div className="flex-1 h-2 bg-muted rounded overflow-hidden mb-1">
-                        <div className="h-full rounded bg-primary" style={{ width: `${(d.current / 0.278) * 100}%` }} />
-                      </div>
-                      <div className="flex justify-between text-[9px]">
-                        <span className="text-muted-foreground">Score: <span className="font-mono text-foreground">{d.current.toFixed(3)}</span></span>
-                        <span className={d.delta > 0 ? "text-emerald-400" : d.delta < -0.005 ? "text-amber-400" : "text-muted-foreground"}>
-                          {d.delta > 0 ? "+" : ""}{(d.delta * 100).toFixed(1)} ({d.deltaPct > 0 ? "+" : ""}{d.deltaPct}%)
-                        </span>
+                      <div className="border border-blue-500/30 rounded-lg p-3 bg-blue-500/5">
+                        <h5 className="text-[10px] font-semibold text-blue-700 uppercase tracking-wider mb-2 flex items-center gap-1">
+                          <Brain className="w-3 h-3" />Mechanic Coverage
+                        </h5>
+                        {promoChartData.map(d => (
+                          <div key={d.name} className="flex justify-between text-[10px] py-0.5">
+                            <span className="font-mono text-blue-800">{d.name}</span>
+                            <span className="text-blue-700 font-medium">{d.activeRows.toLocaleString()} rows</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
-                  ))}
-                </div>
-
-                {/* Feature importance over time chart */}
-                <div className="space-y-2">
-                  <h4 className="text-xs font-semibold flex items-center gap-1.5"><Brain className="w-3.5 h-3.5 text-primary" />Driver Evolution — Importance Scores Over 6 Periods</h4>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <LineChart data={monitoringData.featureHistory} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
-                      <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
-                      <YAxis tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} tickFormatter={v => v.toFixed(2)} />
-                      <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} formatter={(v: any) => (v as number).toFixed(4)} />
-                      <Legend wrapperStyle={{ fontSize: "10px" }} />
-                      {(monitoringData.featureNames || []).map((name: string, idx: number) => {
-                        const colors = ["#FFD822", "#3b82f6", "#a78bfa", "#f97316", "#22c55e", "#ec4899"];
-                        return <Line key={name} type="monotone" dataKey={name} stroke={colors[idx % colors.length]} strokeWidth={1.5} dot={false} name={name.replace(/_/g, " ")} />;
-                      })}
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-
-                {/* Rising / Declining summary */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="border border-emerald-500/30 rounded-lg p-3 bg-emerald-500/8">
-                    <h5 className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wider mb-2 flex items-center gap-1"><ArrowUpRight className="w-3 h-3" />Rising Drivers</h5>
-                    {(monitoringData.driverChanges || []).filter((d: any) => d.trend === "rising").length === 0
-                      ? <p className="text-[10px] text-muted-foreground">No significantly rising drivers detected.</p>
-                      : (monitoringData.driverChanges || []).filter((d: any) => d.trend === "rising").map((d: any) => (
-                        <div key={d.name} className="flex justify-between text-[10px] py-0.5">
-                          <span className="font-mono text-emerald-800">{d.name}</span>
-                          <span className="text-emerald-700 font-medium">+{d.deltaPct}%</span>
-                        </div>
-                      ))}
-                  </div>
-                  <div className="border border-amber-500/30 rounded-lg p-3 bg-amber-500/8">
-                    <h5 className="text-[10px] font-semibold text-amber-700 uppercase tracking-wider mb-2 flex items-center gap-1"><ArrowDownRight className="w-3 h-3" />Declining Drivers</h5>
-                    {(monitoringData.driverChanges || []).filter((d: any) => d.trend === "declining").length === 0
-                      ? <p className="text-[10px] text-muted-foreground">No significantly declining drivers detected.</p>
-                      : (monitoringData.driverChanges || []).filter((d: any) => d.trend === "declining").map((d: any) => (
-                        <div key={d.name} className="flex justify-between text-[10px] py-0.5">
-                          <span className="font-mono text-amber-800">{d.name}</span>
-                          <span className="text-amber-700 font-medium">{d.deltaPct}%</span>
-                        </div>
-                      ))}
-                  </div>
-                </div>
+                  </>
+                ) : (
+                  <div className="p-8 text-center text-xs text-muted-foreground">No driver data available. Run promo uplift analysis first.</div>
+                )}
               </div>
             )}
 
             {/* ── INSIGHTS TAB ── */}
-            {!monitorLoading && monitorTab === "insights" && monitoringData && (
+            {monitorTab === "insights" && activeMonitorModel && (
               <div className="p-4 space-y-3">
-                <div className="flex items-center gap-2 p-3 rounded-lg border border-blue-500/30 bg-blue-500/8">
+                <div className="flex items-center gap-2 p-3 rounded-lg border border-blue-500/30 bg-blue-500/5">
                   <Sparkles className="w-4 h-4 text-blue-700 flex-shrink-0" />
                   <p className="text-[11px] text-blue-800">
-                    ML Orion analysed 12 weeks of performance trends, drift signals, and driver evolution to generate these prioritised recommendations.
+                    ML Orion analysed promo uplift results, model fit metrics, and mechanic performance to generate these prioritised recommendations.
                   </p>
                 </div>
-                {/* High severity first */}
-                {(monitoringData.recommendations || [])
-                  .sort((a: any, b: any) => { const o: Record<string, number> = { high: 0, medium: 1, low: 2 }; return (o[a.severity] ?? 3) - (o[b.severity] ?? 3); })
-                  .map((rec: any) => <RecommendationCard key={rec.id} rec={rec} />)
-                }
+                {generateInsights(activeMonitorModel).map(rec => <InsightCard key={rec.id} rec={rec} />)}
               </div>
             )}
           </div>
@@ -1209,88 +1043,48 @@ export default function OrionDeployPage() {
           {availableModels.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground text-xs">
               No trained models available. Train a model in the Experiments page.
-              <div className="mt-2"><a href="/orion/experiments" className="text-primary underline text-xs">Go to Experiments →</a></div>
+              <div className="mt-2"><a href="/cpg/promo-uplift/orion/experiments" className="text-primary underline text-xs">Go to Experiments →</a></div>
             </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b bg-muted/30">
-                    {["Model", "Algorithm", "AUC", "F1", "Accuracy", "Trained", "Approval", "Actions"].map(h => (
+                    {["Model", "Algorithm", "R²", "RMSE", "Promo Cols", "Trained", "Approval", "Actions"].map(h => (
                       <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {availableModels.map(m => (
-                    <tr key={m.id} className="border-b hover:bg-muted/10" data-testid={`row-available-${m.id}`}>
-                      <td className="px-3 py-2 font-medium max-w-[160px] truncate">{m.name}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{m.algorithm}</td>
-                      <td className="px-3 py-2 font-mono font-bold text-primary">{m.auc?.toFixed(4) ?? "—"}</td>
-                      <td className="px-3 py-2 font-mono">{m.f1Score?.toFixed(4) ?? "—"}</td>
-                      <td className="px-3 py-2 font-mono">{m.accuracy ? `${(m.accuracy * 100).toFixed(1)}%` : "—"}</td>
-                      <td className="px-3 py-2 text-muted-foreground">{m.trainedAt ? new Date(m.trainedAt).toLocaleDateString() : "—"}</td>
-                      <td className="px-3 py-2">
-                        <StatusBadge status={m.approvalStatus === "approved" ? "Approved" : m.approvalStatus === "rejected" ? "Rejected" : "Pending"} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex gap-1">
-                          <Button size="icon" variant="ghost" className="h-6 w-6 hover:bg-emerald-500/10 hover:text-emerald-500"
-                            onClick={() => deployMut.mutate(m.id)} title="Deploy" data-testid={`button-deploy-${m.id}`}>
-                            <PlayCircle className="w-3 h-3" />
-                          </Button>
-                          <Button size="icon" variant="ghost" className="h-6 w-6 hover:bg-amber-500/10 hover:text-amber-500"
-                            onClick={() => { setApprovalModel(m); setApprovalNotes(""); setApprovalAction("approve"); }}
-                            title="Submit for approval" data-testid={`button-request-approval-${m.id}`}>
-                            <Send className="w-3 h-3" />
-                          </Button>
-                          <Button size="icon" variant="ghost" className="h-6 w-6 hover:bg-red-500/10 hover:text-red-500"
-                            onClick={() => setDeleteId(m.id)} title="Delete" data-testid={`button-delete-available-${m.id}`}>
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* ── ALL MODELS ── */}
-        {models.filter(m => m.status !== "training").length > 0 && (
-          <div className="bg-card border rounded-lg overflow-hidden">
-            <div className="px-4 py-3 border-b">
-              <h3 className="text-sm font-semibold">All Models — Registry</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b bg-muted/30">
-                    {["Model", "Algorithm", "Deployed", "AUC", "Predictions", "Monitor Status", "Approval", "Actions"].map(h => (
-                      <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {models.filter(m => m.status !== "training").map(m => {
-                    const predCount = predCountForModel(m.id);
-                    const monStatus = getMonitoringStatus(m, predCount, totalActiveCustomers);
+                  {availableModels.map(m => {
+                    const pd = getPromoData(m);
                     return (
-                      <tr key={m.id} className="border-b hover:bg-muted/10" data-testid={`row-monitor-${m.id}`}>
-                        <td className="px-3 py-2 font-medium max-w-[140px] truncate">{m.name}</td>
+                      <tr key={m.id} className="border-b hover:bg-muted/10" data-testid={`row-available-${m.id}`}>
+                        <td className="px-3 py-2 font-medium max-w-[160px] truncate">{m.name}</td>
                         <td className="px-3 py-2 text-muted-foreground">{m.algorithm}</td>
-                        <td className="px-3 py-2">{m.isDeployed ? <span className="text-emerald-500 font-medium">Yes</span> : <span className="text-muted-foreground">No</span>}</td>
-                        <td className="px-3 py-2 font-mono">{m.auc?.toFixed(4) ?? "—"}</td>
-                        <td className="px-3 py-2 font-mono">{predCount.toLocaleString()}</td>
-                        <td className="px-3 py-2"><StatusBadge status={monStatus.label.split(" — ")[0]} /></td>
-                        <td className="px-3 py-2"><StatusBadge status={m.approvalStatus === "approved" ? "Approved" : m.approvalStatus === "rejected" ? "Rejected" : "Pending"} /></td>
+                        <td className="px-3 py-2 font-mono font-bold text-primary">{(pd.r2 ?? m.auc)?.toFixed(4) ?? "—"}</td>
+                        <td className="px-3 py-2 font-mono">{pd.rmse != null ? pd.rmse.toFixed(3) : "—"}</td>
+                        <td className="px-3 py-2 font-mono">{pd.promoColumns.length > 0 ? pd.promoColumns.length : "—"}</td>
+                        <td className="px-3 py-2 text-muted-foreground">{m.trainedAt ? new Date(m.trainedAt).toLocaleDateString() : "—"}</td>
                         <td className="px-3 py-2">
-                          <Button size="icon" variant="ghost" className="h-6 w-6 hover:bg-red-500/10 hover:text-red-500"
-                            onClick={() => setDeleteId(m.id)} data-testid={`button-delete-monitor-${m.id}`}>
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
+                          <StatusBadge status={m.approvalStatus === "approved" ? "Approved" : m.approvalStatus === "rejected" ? "Rejected" : "Pending"} />
+                        </td>
+                        <td className="px-3 py-2">
+                          <div className="flex gap-1">
+                            <Button size="icon" variant="ghost" className="h-6 w-6 hover:bg-emerald-500/10 hover:text-emerald-500"
+                              onClick={() => deployMut.mutate(m.id)} title="Deploy" data-testid={`button-deploy-${m.id}`}>
+                              <PlayCircle className="w-3 h-3" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-6 w-6 hover:bg-amber-500/10 hover:text-amber-500"
+                              onClick={() => { setApprovalModel(m); setApprovalNotes(""); setApprovalAction("approve"); }}
+                              title="Submit for approval" data-testid={`button-request-approval-${m.id}`}>
+                              <Send className="w-3 h-3" />
+                            </Button>
+                            <Button size="icon" variant="ghost" className="h-6 w-6 hover:bg-red-500/10 hover:text-red-500"
+                              onClick={() => setDeleteId(m.id)} title="Delete" data-testid={`button-delete-available-${m.id}`}>
+                              <Trash2 className="w-3 h-3" />
+                            </Button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -1298,8 +1092,9 @@ export default function OrionDeployPage() {
                 </tbody>
               </table>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+
       </div>
 
       {/* Delete Dialog */}
@@ -1308,7 +1103,7 @@ export default function OrionDeployPage() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Model</AlertDialogTitle>
             <AlertDialogDescription>
-              Delete <strong>{deleteTarget?.name}</strong>? All associated predictions will also be removed. This cannot be undone.
+              Delete <strong>{deleteTarget?.name}</strong>? This cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1325,29 +1120,46 @@ export default function OrionDeployPage() {
       <Dialog open={!!approvalModel} onOpenChange={() => setApprovalModel(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{approvalAction === "approve" ? "Approve" : "Reject"} Model</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-primary" />Model Approval
+            </DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
-            <p className="text-xs text-muted-foreground">Model: <strong>{approvalModel?.name}</strong></p>
+          <div className="space-y-4">
+            <div className="bg-muted/30 rounded p-3 space-y-1 text-xs">
+              <div className="flex justify-between"><span className="text-muted-foreground">Model</span><span className="font-medium">{approvalModel?.name}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Algorithm</span><span>{approvalModel?.algorithm}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">R²</span><span className="font-mono text-primary">{approvalModel?.auc?.toFixed(4)}</span></div>
+              <div className="flex justify-between"><span className="text-muted-foreground">Status</span>
+                <StatusBadge status={approvalModel?.approvalStatus === "approved" ? "Approved" : approvalModel?.approvalStatus === "rejected" ? "Rejected" : "Pending"} />
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={() => setApprovalAction("approve")}
+                className={`flex-1 py-2 rounded text-xs font-medium border transition-colors ${approvalAction === "approve" ? "bg-emerald-500 text-white border-emerald-500" : "border-border text-muted-foreground hover:bg-muted/20"}`}
+                data-testid="button-approval-approve">✓ Approve</button>
+              <button onClick={() => setApprovalAction("reject")}
+                className={`flex-1 py-2 rounded text-xs font-medium border transition-colors ${approvalAction === "reject" ? "bg-red-500 text-white border-red-500" : "border-border text-muted-foreground hover:bg-muted/20"}`}
+                data-testid="button-approval-reject">✗ Reject</button>
+            </div>
             <div>
-              <label className="text-xs font-medium">Review Notes</label>
+              <label className="text-[10px] text-muted-foreground uppercase">Notes (optional)</label>
               <textarea
-                className="mt-1 w-full h-20 text-xs border rounded p-2 bg-background resize-none"
-                placeholder="Add notes for the governance audit log…"
+                className="mt-1 w-full text-xs bg-background border rounded px-2 py-1.5 resize-none"
+                rows={3}
+                placeholder="Add approval notes, conditions, or rejection reason..."
                 value={approvalNotes}
                 onChange={e => setApprovalNotes(e.target.value)}
-                data-testid="textarea-approval-notes"
+                data-testid="input-approval-notes"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setApprovalModel(null)}>Cancel</Button>
-            <Button
-              className={approvalAction === "approve" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-destructive text-destructive-foreground hover:bg-destructive/90"}
+            <Button variant="outline" size="sm" onClick={() => setApprovalModel(null)}>Cancel</Button>
+            <Button size="sm"
+              className={approvalAction === "approve" ? "bg-emerald-600 hover:bg-emerald-700 text-white" : "bg-red-600 hover:bg-red-700 text-white"}
               onClick={() => approvalModel && approveMut.mutate({ id: approvalModel.id, notes: approvalNotes, action: approvalAction })}
               disabled={approveMut.isPending}
-              data-testid="button-confirm-approval"
-            >
+              data-testid="button-submit-approval">
               {approvalAction === "approve" ? <><CheckCircle className="w-3.5 h-3.5 mr-1.5" />Approve Model</> : <><XCircle className="w-3.5 h-3.5 mr-1.5" />Reject Model</>}
             </Button>
           </DialogFooter>
@@ -1356,3 +1168,4 @@ export default function OrionDeployPage() {
     </OrionLayout>
   );
 }
+

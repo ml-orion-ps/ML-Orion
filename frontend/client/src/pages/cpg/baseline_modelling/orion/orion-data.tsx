@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
 import { OrionLayout, KpiCard, StatusBadge, OrionNav } from "@/components/orion-layout";
 import { Button } from "@/components/ui/button";
@@ -161,6 +162,20 @@ function draftFromFeature(feature: CustomFeatureDefinition): FeatureDraft {
   };
 }
 
+function pickFirstColumn(
+  columns: Array<{ name: string; type: string }>,
+  preferred: string[],
+  fallback?: (column: { name: string; type: string }) => boolean,
+) {
+  const preferredMatch = preferred.find((name) => columns.some((column) => column.name === name));
+  if (preferredMatch) return preferredMatch;
+  return (fallback ? columns.find(fallback) : columns[0])?.name || "";
+}
+
+function isNumericColumn(column: { name: string; type: string }) {
+  return ["numeric", "number", "integer", "float", "double", "real"].includes(String(column.type).toLowerCase());
+}
+
 function HistogramBar({ label, count, max, churnCount }: { label: string; count: number; max: number; churnCount?: number }) {
   const pct = max > 0 ? (count / max) * 100 : 0;
   const churnPct = count > 0 && churnCount !== undefined ? (churnCount / count) * 100 : 0;
@@ -190,6 +205,7 @@ function StatRow({ label, value }: { label: string; value: any }) {
 export default function BaselineOrionDataPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const fileRef = useRef<HTMLInputElement>(null);
   const [activeTab, setActiveTab] = useState<"ingest" | "registry" | "eda" | "quality" | "features">("ingest");
   const [qualitySource, setQualitySource] = useState<"live" | number>("live");
@@ -211,29 +227,35 @@ export default function BaselineOrionDataPage() {
   const [uploadName, setUploadName] = useState("");
   const [dragOver, setDragOver] = useState(false);
   const [dbForm, setDbForm] = useState({ host: "", port: "5432", dbname: "", user: "", password: "" });
-
-  const { data: datasets = [] } = useQuery<Dataset[]>({ queryKey: ["/api/datasets"] });
+  const API_BASE = "/api/cpg/baseline_modelling";
+  const goToExperimentLab = () => setLocation("/cpg/baseline-modelling/orion/experiments");
+  const { data: datasets = [] } = useQuery<Dataset[]>({ queryKey: [`${API_BASE}/datasets`] });
   const { data: eda, isLoading: edaLoading } = useQuery<any>({
-    queryKey: ["/api/orion/eda-live"],
+    queryKey: [`${API_BASE}/eda-live`],
     staleTime: 60000,
   });
 
   // Fetch feature importance from dataset's trained model (only when dataset is selected)
-  const { data: allModels = [] } = useQuery<any[]>({ queryKey: ["/api/models"] });
+  const { data: allModels = [] } = useQuery<any[]>({ queryKey: [`${API_BASE}/models`] });
 
   // Models that were trained on the currently selected dataset
   const datasetsModels = selectedFeatureDataset
-    ? (allModels as any[]).filter((m: any) => m.datasetId === selectedFeatureDataset && m.featureImportance)
+    ? (allModels as any[])
+        .filter((m: any) => m.datasetId === selectedFeatureDataset)
+        .sort((a: any, b: any) => {
+          if (a.isDeployed !== b.isDeployed) return a.isDeployed ? -1 : 1;
+          return new Date(b.trainedAt || 0).getTime() - new Date(a.trainedAt || 0).getTime();
+        })
     : [];
 
   const { data: modelFeatures, isLoading: featuresLoading } = useQuery<any>({
-    queryKey: ["/api/models/latest/features", selectedFeatureDataset, selectedFeatureModelId],
+    queryKey: [`${API_BASE}/models/latest/features`, selectedFeatureDataset, selectedFeatureModelId],
     queryFn: async () => {
       if (selectedFeatureDataset === null) return null;
       const params = selectedFeatureModelId
         ? `modelId=${selectedFeatureModelId}`
         : `datasetId=${selectedFeatureDataset}`;
-      const url = `/api/models/latest/features?${params}`;
+      const url = `${API_BASE}/models/latest/features?${params}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -247,28 +269,53 @@ export default function BaselineOrionDataPage() {
     features: CustomFeatureDefinition[];
     availableColumns: Array<{ name: string; type: string }>;
   }>({
-    queryKey: ["/api/datasets", selectedFeatureDataset, "custom-features"],
+    queryKey: [`${API_BASE}/datasets`, selectedFeatureDataset, "custom-features"],
     queryFn: async () => {
-      const res = await fetch(`/api/datasets/${selectedFeatureDataset}/custom-features`);
+      const res = await fetch(`${API_BASE}/datasets/${selectedFeatureDataset}/custom-features`);
       if (!res.ok) throw new Error(await res.text());
-      return res.json();
+      const json = await res.json();
+      if (Array.isArray(json)) {
+        const dataset = datasets.find((ds) => ds.id === selectedFeatureDataset);
+        return {
+          datasetId: selectedFeatureDataset as number,
+          features: json,
+          availableColumns: ((dataset as any)?.columns || []) as Array<{ name: string; type: string }>,
+        };
+      }
+      return {
+        datasetId: json.datasetId ?? selectedFeatureDataset,
+        features: Array.isArray(json.features) ? json.features : [],
+        availableColumns: Array.isArray(json.availableColumns) ? json.availableColumns : [],
+      };
     },
     enabled: selectedFeatureDataset !== null,
     staleTime: 60000,
   });
 
   const builtFeatures = customFeatureState?.features || [];
-  const builderColumns = customFeatureState?.availableColumns || [];
-  const hasAccountNumber = builderColumns.some(c => c.name === "account_number");
+  const builderColumns = useMemo(() => customFeatureState?.availableColumns || [], [customFeatureState]);
+  const numericBuilderColumns = useMemo(() => builderColumns.filter(isNumericColumn), [builderColumns]);
+  const selectedEntityColumn = useMemo(
+    () => pickFirstColumn(builderColumns, ["store_id", "sku_id", "item_id", "product_id", "account_number"]),
+    [builderColumns],
+  );
+  const selectedTimeColumn = useMemo(
+    () => pickFirstColumn(builderColumns, ["week_id", "date_id", "date", "snapshot_month", "month"]),
+    [builderColumns],
+  );
+  const selectedNumericColumn = useMemo(
+    () => pickFirstColumn(builderColumns, ["sales_units", "base_price", "price"], isNumericColumn),
+    [builderColumns],
+  );
 
   const { data: suggestedFeatures = [], isLoading: suggestionsLoading } = useQuery<any[]>({
-    queryKey: ["/api/cpg/datasets", selectedFeatureDataset, "feature-suggestions"],
+    queryKey: [`${API_BASE}/datasets`, selectedFeatureDataset, "feature-suggestions"],
     queryFn: async () => {
       if (selectedFeatureDataset === null) return [];
-      const res = await fetch(`/api/cpg/datasets/${selectedFeatureDataset}/feature-suggestions`);
+      const res = await fetch(`${API_BASE}/datasets/${selectedFeatureDataset}/feature-suggestions`);
       if (!res.ok) throw new Error(await res.text());
       const json = await res.json();
-      return Array.isArray(json.suggestions) ? json.suggestions : [];
+      return Array.isArray(json) ? json : (Array.isArray(json.suggestions) ? json.suggestions : []);
     },
     enabled: selectedFeatureDataset !== null && featureSubTab === "suggestions",
     staleTime: 60000,
@@ -281,12 +328,12 @@ export default function BaselineOrionDataPage() {
         ...suggestion,
         status: suggestion.status || "ready",
       };
-      const res = await apiRequest("POST", `/api/cpg/datasets/${selectedFeatureDataset}/custom-features`, body);
+      const res = await apiRequest("POST", `${API_BASE}/datasets/${selectedFeatureDataset}/custom-features`, body);
       return res.json();
     },
     onSuccess: (data: any) => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/datasets", selectedFeatureDataset, "custom-features"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/datasets", selectedFeatureDataset, "feature-suggestions"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`, selectedFeatureDataset, "custom-features"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`, selectedFeatureDataset, "feature-suggestions"] });
       setStagedFeatures((prev) => new Set(prev).add(data.feature.id));
       toast({ title: "Feature added", description: `${data.feature.name} has been added to this dataset.` });
     },
@@ -299,15 +346,44 @@ export default function BaselineOrionDataPage() {
     setFeatureWarnings([]);
   }, [selectedFeatureDataset]);
 
+  useEffect(() => {
+    if (selectedFeatureDataset === null || builderColumns.length === 0) return;
+    setFeatureDraft((prev) => ({
+      ...prev,
+      entityKey: prev.entityKey && builderColumns.some((column) => column.name === prev.entityKey)
+        ? prev.entityKey
+        : selectedEntityColumn,
+      timeColumn: prev.timeColumn && builderColumns.some((column) => column.name === prev.timeColumn)
+        ? prev.timeColumn
+        : selectedTimeColumn,
+      sourceColumn: prev.sourceColumn && builderColumns.some((column) => column.name === prev.sourceColumn)
+        ? prev.sourceColumn
+        : selectedNumericColumn,
+      numeratorColumn: prev.numeratorColumn && builderColumns.some((column) => column.name === prev.numeratorColumn)
+        ? prev.numeratorColumn
+        : selectedNumericColumn,
+      denominatorColumn: prev.denominatorColumn && builderColumns.some((column) => column.name === prev.denominatorColumn)
+        ? prev.denominatorColumn
+        : numericBuilderColumns.find((column) => column.name !== selectedNumericColumn)?.name || selectedNumericColumn,
+      leftColumn: prev.leftColumn && builderColumns.some((column) => column.name === prev.leftColumn)
+        ? prev.leftColumn
+        : selectedNumericColumn,
+      rightColumn: prev.rightColumn && builderColumns.some((column) => column.name === prev.rightColumn)
+        ? prev.rightColumn
+        : numericBuilderColumns.find((column) => column.name !== selectedNumericColumn)?.name || selectedNumericColumn,
+    }));
+  }, [builderColumns, numericBuilderColumns, selectedEntityColumn, selectedFeatureDataset, selectedNumericColumn, selectedTimeColumn]);
+
   const previewFeatureMut = useMutation({
     mutationFn: async () => {
       if (selectedFeatureDataset === null) throw new Error("Select a dataset first");
-      const res = await apiRequest("POST", `/api/cpg/datasets/${selectedFeatureDataset}/custom-features/preview`, buildFeaturePayload(featureDraft));
+      const res = await apiRequest("POST", `${API_BASE}/datasets/${selectedFeatureDataset}/custom-features/preview`, buildFeaturePayload(featureDraft));
       return res.json();
     },
     onSuccess: (data) => {
       setFeatureFormula(data.formula || "");
       setFeaturePreview(Array.isArray(data.preview) ? data.preview : []);
+      setFeatureWarnings(Array.isArray(data.warnings) ? data.warnings : []);
     },
     onError: (e: any) => toast({ title: "Preview failed", description: e.message, variant: "destructive" }),
   });
@@ -315,12 +391,12 @@ export default function BaselineOrionDataPage() {
   const saveFeatureMut = useMutation({
     mutationFn: async () => {
       if (selectedFeatureDataset === null) throw new Error("Select a dataset first");
-      const res = await apiRequest("POST", `/api/datasets/${selectedFeatureDataset}/custom-features`, buildFeaturePayload(featureDraft));
+      const res = await apiRequest("POST", `${API_BASE}/datasets/${selectedFeatureDataset}/custom-features`, buildFeaturePayload(featureDraft));
       return res.json();
     },
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets"] });
-      qc.invalidateQueries({ queryKey: ["/api/datasets", selectedFeatureDataset, "custom-features"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`, selectedFeatureDataset, "custom-features"] });
       setFeatureDraft(createFeatureDraft(featureDraft.type));
       setFeatureFormula("");
       setFeaturePreview([]);
@@ -333,11 +409,11 @@ export default function BaselineOrionDataPage() {
   const deleteFeatureMut = useMutation({
     mutationFn: async (featureId: string) => {
       if (selectedFeatureDataset === null) throw new Error("Select a dataset first");
-      await apiRequest("DELETE", `/api/datasets/${selectedFeatureDataset}/custom-features/${featureId}`);
+      await apiRequest("DELETE", `${API_BASE}/datasets/${selectedFeatureDataset}/custom-features/${featureId}`);
       return featureId;
     },
     onSuccess: (featureId) => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets", selectedFeatureDataset, "custom-features"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`, selectedFeatureDataset, "custom-features"] });
       if (featureDraft.id === featureId) {
         setFeatureDraft(createFeatureDraft());
         setFeatureFormula("");
@@ -353,12 +429,12 @@ export default function BaselineOrionDataPage() {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("name", uploadName || file.name.replace(".csv", ""));
-      const r = await fetch("/api/datasets/upload", { method: "POST", body: fd });
+      const r = await fetch(`${API_BASE}/datasets/upload`, { method: "POST", body: fd });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
     },
     onSuccess: (d) => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`] });
       setActiveTab("registry");
       toast({ title: "Dataset uploaded", description: `${d.rowCount.toLocaleString()} rows ingested` });
     },
@@ -366,9 +442,9 @@ export default function BaselineOrionDataPage() {
   });
 
   const deleteMut = useMutation({
-    mutationFn: (id: number) => apiRequest("DELETE", `/api/datasets/${id}`),
+    mutationFn: (id: number) => apiRequest("DELETE", `${API_BASE}/datasets/${id}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`] });
       toast({ title: "Dataset deleted" });
       setDeleteTarget(null);
     },
@@ -376,15 +452,15 @@ export default function BaselineOrionDataPage() {
   });
 
   const edaMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/datasets/${id}/eda?usecase=baseline`),
+    mutationFn: (id: number) => apiRequest("POST", `${API_BASE}/datasets/${id}/eda?usecase=baseline`),
     onSuccess: async (response: Response) => {
       try {
         const data = await response.json();
-        qc.setQueryData(["/api/datasets"], (old: any[] = []) =>
+        qc.setQueryData([`${API_BASE}/datasets`], (old: any[] = []) =>
           old.map((d: any) => d.id === data.id ? data : d)
         );
       } catch {
-        qc.invalidateQueries({ queryKey: ["/api/datasets"] });
+        qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`] });
       }
       toast({ title: "EDA complete", description: "Analysis has been generated for this dataset." });
     },
@@ -434,13 +510,26 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
     }
   }, [activeTab, datasets.length]);
 
-  // Use model features from API (sorted by importance), or fallback to empty array
-  const MODEL_FEATURES = modelFeatures?.features || [];
-
   const toPositiveNumber = (value: any) => {
     const parsed = Number(value);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
   };
+
+  const MODEL_FEATURES = useMemo(() => {
+    const features = Array.isArray(modelFeatures?.features) ? modelFeatures.features : [];
+    return features
+      .map((feature: any) => {
+        const name = String(feature.name || feature.feature || feature.column || "feature");
+        return {
+          ...feature,
+          name,
+          importance: toPositiveNumber(feature.importance),
+          type: feature.type || (numericBuilderColumns.some((column) => column.name === name) ? "numeric" : "model"),
+          description: feature.description || "Signal used by the selected baseline model.",
+        };
+      })
+      .sort((a: any, b: any) => toPositiveNumber(b.importance) - toPositiveNumber(a.importance));
+  }, [modelFeatures, numericBuilderColumns]);
 
   const modelFeatureMaxImportance = MODEL_FEATURES.length > 0
     ? Math.max(...MODEL_FEATURES.map((feature: any) => toPositiveNumber(feature.importance)))
@@ -457,7 +546,7 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
   return (
     <OrionLayout title="Data Hub" subtitle="Dataset registry, EDA, and Feature Engineering" isLoading={edaLoading}>
       <div className="space-y-4">
-        <OrionNav current="/orion/data" />
+        <OrionNav current="/cpg/baseline-modelling/orion/data" basePath="/cpg/baseline-modelling/orion" />
 
         <div className="flex gap-1 border-b">
           {(["ingest", "registry", "eda", "quality", "features"] as const).map(t => (
@@ -501,7 +590,7 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                   <Label className="text-xs">Dataset Name (optional)</Label>
                   <Input
                     className="mt-1 h-8 text-xs"
-                    placeholder="e.g. Customer Churn Q1 2026"
+                    placeholder="e.g. RGM Dataset"
                     value={uploadName}
                     onChange={e => setUploadName(e.target.value)}
                     data-testid="input-dataset-name"
@@ -1911,12 +2000,16 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                   </div>
                 )}
 
-                {/* No Models for Selected Dataset */}
+                {/* No feature importance for selected dataset/model */}
                 {!featuresLoading && selectedFeatureDataset && MODEL_FEATURES.length === 0 && (
                   <div className="bg-card border border-dashed rounded-lg px-4 py-12 text-center">
                     <AlertTriangle className="w-8 h-8 mx-auto mb-3 text-amber-500 opacity-60" />
-                    <p className="text-sm font-medium text-muted-foreground">No trained models for this dataset</p>
-                    <p className="text-xs text-muted-foreground mt-1">Train a model on this dataset in the Experiments Lab first</p>
+                    <p className="text-sm font-medium text-muted-foreground">
+                      {datasetsModels.length > 0 ? "No feature importance saved for this model" : "No trained models for this dataset"}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {datasetsModels.length > 0 ? "Run a fresh baseline experiment to populate model feature scores." : "Train a model on this dataset in the Experiments Lab first."}
+                    </p>
                   </div>
                 )}
 
@@ -2005,7 +2098,7 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                       <CheckCircle2 className="w-4 h-4 text-green-400" />
                       <span className="text-green-300">{stagedFeatures.size} new feature{stagedFeatures.size > 1 ? "s" : ""} staged — retrain the model in Experiment Lab to apply.</span>
                     </div>
-                    <Button size="sm" className="text-xs h-7 bg-green-600 hover:bg-green-700 text-white" data-testid="button-go-to-experiments">
+                    <Button size="sm" className="text-xs h-7 bg-green-600 hover:bg-green-700 text-white" onClick={goToExperimentLab} data-testid="button-go-to-experiments">
                       Go to Experiment Lab →
                     </Button>
                   </div>
@@ -2040,13 +2133,13 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                     </div>
                   </div>
                   <p className="text-[10px] text-muted-foreground">
-                    Generate suggested features using the selected dataset and the Groq model key.
+                    Generate suggested features using the selected dataset schema.
                   </p>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
                   <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
                   <p className="text-[11px] text-amber-300/90">
-                    ML Orion analysed the current model's residuals and feature correlations to suggest high-impact re-engineering opportunities.
+                    ML Orion reviews numeric, categorical, and time columns to suggest high-impact re-engineering opportunities.
                     Add any to the model and retrain in Experiment Lab.
                   </p>
                 </div>
@@ -2054,7 +2147,7 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                   <div className="bg-card border border-dashed rounded-lg px-4 py-12 text-center">
                     <Sparkles className="w-8 h-8 mx-auto mb-3 text-amber-400 opacity-40" />
                     <p className="text-sm font-medium text-muted-foreground">Select a dataset to load suggestions</p>
-                    <p className="text-xs text-muted-foreground mt-1">Suggested feature ideas depend on dataset context and will be generated by Groq.</p>
+                    <p className="text-xs text-muted-foreground mt-1">Suggested feature ideas depend on dataset context.</p>
                   </div>
                 ) : suggestionsLoading ? (
                   <div className="bg-card border rounded-lg px-4 py-12 text-center">
@@ -2083,7 +2176,7 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                         <div className="flex flex-col items-end gap-2 flex-shrink-0">
                           <div className="text-right">
                             <div className="text-[10px] text-muted-foreground">Predicted Importance Gain</div>
-                            <div className="text-lg font-bold text-green-400">+{sug.importanceGain.toFixed(3)}</div>
+                            <div className="text-lg font-bold text-green-400">+{toPositiveNumber(sug.importanceGain).toFixed(3)}</div>
                           </div>
                           {/* Gain bar */}
                           <div className="w-28 h-2 bg-muted rounded-full overflow-hidden">
@@ -2115,7 +2208,7 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                       <CheckCircle2 className="w-4 h-4 text-green-400" />
                       <span className="text-green-300">{stagedFeatures.size} feature{stagedFeatures.size > 1 ? "s" : ""} added — go to Experiment Lab to retrain with these new features.</span>
                     </div>
-                    <Button size="sm" className="text-xs h-7 bg-green-600 hover:bg-green-700 text-white" data-testid="button-go-to-experiments-2">
+                    <Button size="sm" className="text-xs h-7 bg-green-600 hover:bg-green-700 text-white" onClick={goToExperimentLab} data-testid="button-go-to-experiments-2">
                       Go to Experiment Lab →
                     </Button>
                   </div>
@@ -2142,6 +2235,9 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                           <SelectValue placeholder="Choose an uploaded dataset..." />
                         </SelectTrigger>
                         <SelectContent>
+                          {datasets.length === 0 && (
+                            <SelectItem value="_none" disabled>No datasets available</SelectItem>
+                          )}
                           {datasets.map(ds => (
                             <SelectItem key={ds.id} value={String(ds.id)}>
                               {ds.name} ({ds.rowCount?.toLocaleString()} rows)
@@ -2255,20 +2351,14 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                           <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1.5">
                               <Label className="text-[11px]">Entity Key</Label>
-                              {hasAccountNumber ? (
-                                <div className="h-8 px-3 flex items-center text-xs bg-muted/50 border rounded text-muted-foreground font-mono">
-                                  account_number <span className="ml-1.5 text-[9px] bg-primary/10 text-primary px-1 py-0.5 rounded">auto</span>
-                                </div>
-                              ) : (
-                                <Select value={featureDraft.entityKey} onValueChange={(val) => setFeatureDraft(prev => ({ ...prev, entityKey: val }))}>
-                                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select entity key" /></SelectTrigger>
-                                  <SelectContent>
-                                    {builderColumns.map((column) => (
-                                      <SelectItem key={`entity-${column.name}`} value={column.name}>{column.name}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              )}
+                              <Select value={featureDraft.entityKey} onValueChange={(val) => setFeatureDraft(prev => ({ ...prev, entityKey: val }))}>
+                                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select entity key" /></SelectTrigger>
+                                <SelectContent>
+                                  {builderColumns.map((column) => (
+                                    <SelectItem key={`entity-${column.name}`} value={column.name}>{column.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                             <div className="space-y-1.5">
                               <Label className="text-[11px]">Time Column</Label>
@@ -2289,7 +2379,7 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                               <Select value={featureDraft.sourceColumn} onValueChange={(val) => setFeatureDraft(prev => ({ ...prev, sourceColumn: val }))}>
                                 <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select source column" /></SelectTrigger>
                                 <SelectContent>
-                                  {builderColumns.map((column) => (
+                                  {(numericBuilderColumns.length ? numericBuilderColumns : builderColumns).map((column) => (
                                     <SelectItem key={`source-${column.name}`} value={column.name}>{column.name}</SelectItem>
                                   ))}
                                 </SelectContent>
@@ -2350,7 +2440,7 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                             <Select value={featureDraft.numeratorColumn} onValueChange={(val) => setFeatureDraft(prev => ({ ...prev, numeratorColumn: val }))}>
                               <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select numerator" /></SelectTrigger>
                               <SelectContent>
-                                {builderColumns.map((column) => (
+                                {(numericBuilderColumns.length ? numericBuilderColumns : builderColumns).map((column) => (
                                   <SelectItem key={`num-${column.name}`} value={column.name}>{column.name}</SelectItem>
                                 ))}
                               </SelectContent>
@@ -2361,7 +2451,7 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                             <Select value={featureDraft.denominatorColumn} onValueChange={(val) => setFeatureDraft(prev => ({ ...prev, denominatorColumn: val }))}>
                               <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select denominator" /></SelectTrigger>
                               <SelectContent>
-                                {builderColumns.map((column) => (
+                                {(numericBuilderColumns.length ? numericBuilderColumns : builderColumns).map((column) => (
                                   <SelectItem key={`den-${column.name}`} value={column.name}>{column.name}</SelectItem>
                                 ))}
                               </SelectContent>
@@ -2414,7 +2504,7 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                               <Select value={featureDraft.leftColumn} onValueChange={(val) => setFeatureDraft(prev => ({ ...prev, leftColumn: val }))}>
                                 <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select left column" /></SelectTrigger>
                                 <SelectContent>
-                                  {builderColumns.map((column) => (
+                                  {(numericBuilderColumns.length ? numericBuilderColumns : builderColumns).map((column) => (
                                     <SelectItem key={`left-${column.name}`} value={column.name}>{column.name}</SelectItem>
                                   ))}
                                 </SelectContent>
@@ -2425,7 +2515,7 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                               <Select value={featureDraft.rightColumn} onValueChange={(val) => setFeatureDraft(prev => ({ ...prev, rightColumn: val }))}>
                                 <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select right column" /></SelectTrigger>
                                 <SelectContent>
-                                  {builderColumns.map((column) => (
+                                  {(numericBuilderColumns.length ? numericBuilderColumns : builderColumns).map((column) => (
                                     <SelectItem key={`right-${column.name}`} value={column.name}>{column.name}</SelectItem>
                                   ))}
                                 </SelectContent>
@@ -2453,10 +2543,10 @@ const dsQuality = selectedDataset ? ((selectedDataset as any).qualityReport || (
                       </div>
 
                       <div className="flex items-center gap-2 pt-1">
-                        <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => previewFeatureMut.mutate()} disabled={selectedFeatureDataset === null || previewFeatureMut.isPending}>
+                        <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => previewFeatureMut.mutate()} disabled={selectedFeatureDataset === null || builderColumns.length === 0 || previewFeatureMut.isPending}>
                           Preview
                         </Button>
-                        <Button size="sm" className="text-xs h-8" onClick={() => saveFeatureMut.mutate()} disabled={selectedFeatureDataset === null || saveFeatureMut.isPending}>
+                        <Button size="sm" className="text-xs h-8" onClick={() => saveFeatureMut.mutate()} disabled={selectedFeatureDataset === null || builderColumns.length === 0 || saveFeatureMut.isPending}>
                           {featureDraft.id ? "Update Feature" : "Save Feature"}
                         </Button>
                       </div>

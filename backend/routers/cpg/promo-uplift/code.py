@@ -1,4 +1,4 @@
-"""
+﻿"""
 Code Explorer — lets the UI read and edit the Python backend source files.
 Updated to point to Python files (replacing the old TypeScript references).
 """
@@ -11,18 +11,18 @@ from sqlalchemy.orm import Session
 from database import get_db
 import storage
 
-router = APIRouter(prefix="/api", tags=["code"])
+router = APIRouter(prefix="", tags=["code"])
 
 _ROOT = Path(__file__).parent.parent.parent
 
 # Allowlist of files that the code explorer can read/write.
 # Updated to reference Python files instead of TypeScript originals.
-_ML_SCRIPTS = _ROOT / "ML_backend" / "python-ml" / "tmt" / "customer_churn"
+_ML_SCRIPTS = _ROOT / "ML_backend" / "python-ml" / "cpg" / "promo-uplift"
 _BACKEND = _ROOT / "backend"
 
 CODE_FILE_MAP: dict[str, dict] = {
     "train_model": {
-        "path": _ML_SCRIPTS / "train_model.py",
+        "path": _ML_SCRIPTS / "promo_uplift.py",
         "label": "ML Trainer",
         "description": "Python ML engine: feature engineering, model selection, and training logic",
     },

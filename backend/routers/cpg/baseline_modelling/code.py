@@ -11,18 +11,18 @@ from sqlalchemy.orm import Session
 from database import get_db
 import storage
 
-router = APIRouter(prefix="/api", tags=["code"])
+router = APIRouter(tags=["code"])
 
-_ROOT = Path(__file__).parent.parent.parent
+_ROOT = Path(__file__).resolve().parents[4]
 
 # Allowlist of files that the code explorer can read/write.
 # Updated to reference Python files instead of TypeScript originals.
-_ML_SCRIPTS = _ROOT / "ML_backend" / "python-ml" / "tmt" / "customer_churn"
+_ML_SCRIPTS = _ROOT / "ML_backend" / "python-ml" / "cpg" / "baseline_modelling"
 _BACKEND = _ROOT / "backend"
 
 CODE_FILE_MAP: dict[str, dict] = {
     "train_model": {
-        "path": _ML_SCRIPTS / "train_model.py",
+        "path": _ML_SCRIPTS / "baseline_prediction.py",
         "label": "ML Trainer",
         "description": "Python ML engine: feature engineering, model selection, and training logic",
     },
@@ -40,11 +40,6 @@ CODE_FILE_MAP: dict[str, dict] = {
         "path": _BACKEND / "services" / "ml_service.py",
         "label": "ML Service",
         "description": "Calls Python ML scripts — bridges FastAPI routes to ML training scripts",
-    },
-    "calculate_shap": {
-        "path": _ML_SCRIPTS / "calculate_shap.py",
-        "label": "SHAP Explainer",
-        "description": "Python script for SHAP model explanations and feature contributions",
     },
     "models": {
         "path": _BACKEND / "models.py",
@@ -118,7 +113,7 @@ def update_code_file(file_id: str, body: dict, db: Session = Depends(get_db)):
 @router.get("/orion/algorithms")
 def list_algorithms():
     """Read algorithm names directly from train_model.py."""
-    train_path = _ML_SCRIPTS / "train_model.py"
+    train_path = _ML_SCRIPTS / "baseline_prediction.py"
     algos = [{"value": "Auto", "label": "Auto (Best Model)", "desc": "Trains multiple models and selects the best performer"}]
 
     try:

@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { OrionLayout, KpiCard, StatusBadge, OrionNav } from "@/components/orion-layout";
 import { CheckCircle2, AlertTriangle, XCircle, ShieldCheck, Database, Clock, User, Users, Activity } from "lucide-react";
@@ -35,7 +35,7 @@ export default function OrionGovernancePage() {
   const [tab, setTab] = useState<"registry" | "audit" | "compliance">("registry");
   const [auditFilter, setAuditFilter] = useState<string>("all");
 
-  const { data: gov, isLoading } = useQuery<any>({ queryKey: ["/api/orion/governance"] });
+  const { data: gov, isLoading } = useQuery<any>({ queryKey: ["/api/cpg/promoUplift/orion/governance"] });
 
   const registry: any[] = gov?.registry ?? [];
   const auditEntries: any[] = gov?.auditLog ?? [];
@@ -52,7 +52,7 @@ export default function OrionGovernancePage() {
   return (
     <OrionLayout title="Governance" subtitle="Model registry, compliance, and full audit trail" isLoading={isLoading}>
       <div className="space-y-4">
-        <OrionNav current="/orion/governance" />
+        <OrionNav current="/cpg/promo-uplift/orion/governance" basePath="/cpg/promo-uplift/orion" />
 
         {/* KPI Row */}
         <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
@@ -93,7 +93,7 @@ export default function OrionGovernancePage() {
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b bg-muted/30">
-                      {["Model", "Algorithm", "Dataset", "AUC", "F1", "Status", "Trained", "Deployed", "Approval", "Approver", "Predictions"].map(h => (
+                      {["Model", "Algorithm", "Dataset", "R²", "RMSE", "MAE", "Status", "Trained", "Deployed", "Approval", "Approver", "Predictions"].map(h => (
                         <th key={h} className="text-left px-3 py-2 text-muted-foreground font-medium whitespace-nowrap">{h}</th>
                       ))}
                     </tr>
@@ -110,8 +110,9 @@ export default function OrionGovernancePage() {
                           <p className="max-w-[120px] truncate">{m.datasetName}</p>
                           <p className="text-[9px] text-muted-foreground">{m.datasetRows.toLocaleString()} rows</p>
                         </td>
-                        <td className="px-3 py-2 font-mono font-bold text-primary">{m.auc?.toFixed(4) ?? "—"}</td>
-                        <td className="px-3 py-2 font-mono">{m.f1Score?.toFixed(4) ?? "—"}</td>
+                        <td className="px-3 py-2 font-mono font-bold text-primary">{m.r2 != null ? Number(m.r2).toFixed(4) : "—"}</td>
+                        <td className="px-3 py-2 font-mono">{m.rmse != null ? Number(m.rmse).toFixed(4) : "—"}</td>
+                        <td className="px-3 py-2 font-mono">{m.mae != null ? Number(m.mae).toFixed(4) : "—"}</td>
                         <td className="px-3 py-2"><StatusBadge status={m.isDeployed ? "deployed" : m.status} /></td>
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">
                           <div className="flex items-center gap-1">
@@ -191,7 +192,7 @@ export default function OrionGovernancePage() {
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
                             <span className={`font-medium flex items-center gap-1 ${ACTION_COLOR[e.action] ?? "text-foreground"}`}>
-                              <span>{ACTION_ICON[e.action] ?? "•"}</span>
+                              <span>{ACTION_ICON[e.action] ?? "—"}</span>
                               {e.action}
                             </span>
                           </td>
@@ -306,3 +307,4 @@ export default function OrionGovernancePage() {
     </OrionLayout>
   );
 }
+

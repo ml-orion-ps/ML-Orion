@@ -343,13 +343,19 @@ def baseline_prediction(dataset_id: int, body: dict = {}, db: Session = Depends(
     if not isinstance(models_to_run, list) or not models_to_run:
         models_to_run = ["Ridge", "RF", "XGB"]
 
-    result = run_baseline_prediction(rows, models_to_run=models_to_run)
+    custom_features = get_dataset_custom_features(ds)
+    custom_feature_names = [f.get("name") for f in custom_features if f.get("name")]
+    training_rows = apply_custom_features(rows, custom_features) if custom_features else rows
+
+    result = run_baseline_prediction(
+        training_rows,
+        models_to_run=models_to_run,
+        custom_feature_names=custom_feature_names,
+    )
     if not result.get("success"):
         raise HTTPException(status_code=500, detail=result.get("error", "Baseline prediction failed"))
 
-    feature_report = ds.feature_report or {}
-    if not isinstance(feature_report, dict):
-        feature_report = {}
+    feature_report = dict(ds.feature_report) if isinstance(ds.feature_report, dict) else {}
     summary = result.get("summary", {})
     feature_report["baselinePrediction"] = {
         "summary": summary,
@@ -367,9 +373,16 @@ def baseline_prediction(dataset_id: int, body: dict = {}, db: Session = Depends(
         "use_case": USE_CASE,
         "status": "trained",
         "hyperparameters": _sanitize_for_json(summary.get("bestParams") or {}),
-        "feature_importance": [],
+        "feature_importance": _sanitize_for_json(result.get("featureImportance", [])),
         "confusion_matrix": {},
-        "model_weights": _sanitize_for_json({"modelsRun": models_to_run}),
+        "model_weights": _sanitize_for_json({
+            "bestModel": best_model,
+            "summary": summary,
+            "totals": totals,
+            "modelsRun": models_to_run,
+            "customFeatures": custom_features,
+            "customFeatureNames": custom_feature_names,
+        }),
         "is_deployed": False,
         "wmape": metrics.get("test_wmape"),
         "mae": metrics.get("mae"),
@@ -389,7 +402,11 @@ def get_custom_features(dataset_id: int, db: Session = Depends(get_db)):
     ds = storage.get_dataset(db, dataset_id)
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    return get_dataset_custom_features(ds)
+    return {
+        "datasetId": dataset_id,
+        "features": get_dataset_custom_features(ds),
+        "availableColumns": ds.columns or [],
+    }
 
 
 @router.post("/{dataset_id}/custom-features/validate")
@@ -399,7 +416,7 @@ def validate_custom_feature_endpoint(dataset_id: int, body: dict, db: Session = 
         raise HTTPException(status_code=404, detail="Dataset not found")
     feature = body.get("feature", {})
     col_names = [c["name"] for c in (ds.columns or [])]
-    result = validate_custom_feature(feature, col_names)
+    result = validate_custom_feature(feature, col_names, use_case="cpg_baseline")
     return result
 
 
@@ -408,12 +425,19 @@ def preview_custom_feature(dataset_id: int, body: dict, db: Session = Depends(ge
     ds = storage.get_dataset(db, dataset_id)
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
-    feature = body.get("feature", {})
+    feature = body.get("feature", body)
     rows = get_dataset_rows(ds)
     if not rows:
         raise HTTPException(status_code=400, detail="No data available")
-    preview = build_preview_rows(rows[:100], [feature])
-    return {"preview": preview[:10], "formula": build_custom_feature_formula(feature)}
+    validation = validate_custom_feature(feature, [c["name"] for c in (ds.columns or [])], use_case="cpg_baseline")
+    if not validation.get("valid"):
+        raise HTTPException(status_code=400, detail="; ".join(validation.get("errors", [])))
+    preview = build_preview_rows(rows[:100], [feature], use_case="cpg_baseline")
+    return {
+        "preview": preview[:10],
+        "formula": build_custom_feature_formula(feature),
+        "warnings": validation.get("warnings", []),
+    }
 
 
 @router.post("/{dataset_id}/custom-features")
@@ -422,15 +446,14 @@ def add_custom_feature(dataset_id: int, body: dict, db: Session = Depends(get_db
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    feature_report = ds.feature_report or {}
-    if not isinstance(feature_report, dict):
-        feature_report = {}
+    feature_report = dict(ds.feature_report) if isinstance(ds.feature_report, dict) else {}
 
     existing = feature_report.get("customFeatures", [])
     if not isinstance(existing, list):
         existing = []
+    existing = list(existing)
 
-    new_feature = body.get("feature", body)
+    new_feature = dict(body.get("feature", body))
     if not new_feature.get("id"):
         new_feature["id"] = str(uuid.uuid4())
 
@@ -441,13 +464,20 @@ def add_custom_feature(dataset_id: int, body: dict, db: Session = Depends(get_db
 
     new_feature["status"] = "ready"
     new_feature["formula"] = build_custom_feature_formula(new_feature)
+    validation = validate_custom_feature(new_feature, col_names, use_case="cpg_baseline")
+    if not validation.get("valid"):
+        raise HTTPException(status_code=400, detail="; ".join(validation.get("errors", [])))
 
     existing = [f for f in existing if f.get("id") != new_feature["id"]]
     existing.append(new_feature)
     feature_report["customFeatures"] = existing
 
     ds_updated = storage.update_dataset(db, dataset_id, {"feature_report": feature_report})
-    return _sanitize_dataset(ds_updated)
+    return {
+        "dataset": _sanitize_dataset(ds_updated),
+        "feature": new_feature,
+        "warnings": validation.get("warnings", []),
+    }
 
 
 @router.delete("/{dataset_id}/custom-features/{feature_id}")
@@ -456,10 +486,11 @@ def delete_custom_feature(dataset_id: int, feature_id: str, db: Session = Depend
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    feature_report = ds.feature_report or {}
-    if not isinstance(feature_report, dict):
-        feature_report = {}
+    feature_report = dict(ds.feature_report) if isinstance(ds.feature_report, dict) else {}
     existing = feature_report.get("customFeatures", [])
+    if not isinstance(existing, list):
+        existing = []
+    existing = list(existing)
     feature_report["customFeatures"] = [f for f in existing if f.get("id") != feature_id]
 
     ds_updated = storage.update_dataset(db, dataset_id, {"feature_report": feature_report})
@@ -472,39 +503,118 @@ def feature_suggestions(dataset_id: int, db: Session = Depends(get_db)):
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    cols = ds.columns or []
-    numeric_cols = [c["name"] for c in cols if c.get("type") == "numeric"]
-    cat_cols = [c["name"] for c in cols if c.get("type") == "categorical"]
-    time_col = next((c["name"] for c in cols if any(k in c["name"].lower() for k in ["snapshot", "date", "month", "day", "year", "time"])), None)
+    suggestion_specs = [
+        (
+            "avg_brand_price_store_week",
+            "AVG(price) by brand, store, week",
+            "Captures average brand-level price movement within a store-week.",
+            "high",
+            0.060,
+        ),
+        (
+            "own_brand_price_index",
+            "SKU price / avg_brand_price_store_week",
+            "Shows whether the SKU is priced higher or lower than its own brand average.",
+            "high",
+            0.058,
+        ),
+        (
+            "avg_cat_price_store_week",
+            "AVG(price) by category, store, week",
+            "Captures the overall category price level in a store-week.",
+            "high",
+            0.056,
+        ),
+        (
+            "own_cat_price_index",
+            "SKU price / avg_cat_price_store_week",
+            "Measures SKU price positioning versus the category average.",
+            "high",
+            0.054,
+        ),
+        (
+            "seasonality_index",
+            "avg_sales_for_week_or_month / overall_avg_sales",
+            "Captures recurring seasonal demand patterns.",
+            "high",
+            0.052,
+        ),
+        (
+            "price_change_vs_last_week",
+            "(price_t - price_t-1) / price_t-1",
+            "Captures sudden price movement impact on demand.",
+            "medium",
+            0.048,
+        ),
+        (
+            "price_change_vs_4wk_avg",
+            "(price_t - avg_price_last_4_weeks) / avg_price_last_4_weeks",
+            "Measures deviation from recent normal price levels.",
+            "medium",
+            0.046,
+        ),
+        (
+            "competitor_avg_price_cat_store_week",
+            "AVG(competitor_price) by category, store, week",
+            "Captures external competitive pricing pressure.",
+            "medium",
+            0.044,
+        ),
+        (
+            "competitor_price_index",
+            "SKU price / competitor_avg_price_cat_store_week",
+            "Measures SKU price competitiveness versus competitors.",
+            "medium",
+            0.042,
+        ),
+        (
+            "promo_intensity_score",
+            "discount_depth + feature_flag + display_flag + bogo_flag or weighted score",
+            "Captures combined promotional pressure.",
+            "medium",
+            0.040,
+        ),
+        (
+            "weeks_since_last_promo",
+            "current_week - last_promo_week",
+            "Captures post-promo normalization or demand reset.",
+            "medium",
+            0.038,
+        ),
+        (
+            "cannibalization_index_brand",
+            "other_SKU_same_brand_sales / total_brand_sales",
+            "Captures internal brand-level substitution risk.",
+            "low",
+            0.036,
+        ),
+        (
+            "category_demand_index_store_week",
+            "category_sales_store_week / avg_category_sales_store",
+            "Captures whether the category itself is over- or under-performing.",
+            "low",
+            0.034,
+        ),
+        (
+            "store_size_index",
+            "store_sales / avg_store_sales",
+            "Captures store-level selling capacity.",
+            "low",
+            0.032,
+        ),
+    ]
 
-    suggestions: list[dict] = []
-    sid = 1
+    suggestions = [
+        {
+            "id": f"sug_{idx}",
+            "name": name,
+            "type": "business_logic",
+            "formula": formula,
+            "reason": reason,
+            "priority": priority,
+            "importanceGain": importance_gain,
+        }
+        for idx, (name, formula, reason, priority, importance_gain) in enumerate(suggestion_specs, start=1)
+    ]
 
-    if numeric_cols and time_col:
-        suggestions.append({
-            "id": f"sug_{sid}", "name": f"{numeric_cols[0]}_trend_3m", "type": "trend",
-            "formula": f"trend_slope({numeric_cols[0]}, window=3)",
-            "description": f"3-month trend slope of {numeric_cols[0]}",
-            "sourceColumn": numeric_cols[0], "window": 3, "timeColumn": time_col,
-        })
-        sid += 1
-
-    if len(numeric_cols) >= 2:
-        suggestions.append({
-            "id": f"sug_{sid}", "name": f"{numeric_cols[0]}_to_{numeric_cols[1]}_ratio",
-            "type": "ratio", "formula": f"{numeric_cols[0]} / {numeric_cols[1]}",
-            "description": f"Ratio of {numeric_cols[0]} to {numeric_cols[1]}",
-            "numeratorColumn": numeric_cols[0], "denominatorColumn": numeric_cols[1],
-        })
-        sid += 1
-
-    for col in numeric_cols[:3]:
-        suggestions.append({
-            "id": f"sug_{sid}", "name": f"{col}_rolling_mean_3m", "type": "rolling",
-            "formula": f"mean({col}, window=3)",
-            "description": f"3-month rolling mean of {col}",
-            "sourceColumn": col, "window": 3, "aggregation": "mean", "timeColumn": time_col,
-        })
-        sid += 1
-
-    return suggestions
+    return {"suggestions": suggestions}

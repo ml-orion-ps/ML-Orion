@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { OrionLayout, KpiCard, StatusBadge, OrionNav } from "@/components/orion-layout";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, Legend, PieChart, Pie } from "recharts";
 import { Button } from "@/components/ui/button";
 import {
   Rocket,
@@ -20,7 +20,6 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-const RISK_COLORS = { veryHigh: "#dc2626", high: "#ef4444", medium: "#f59e0b", low: "#22c55e" };
 const BAR_COLORS = ["#3b82f6", "#8b5cf6", "#10b981"];
 
 type CodeFileTab = {
@@ -48,40 +47,40 @@ export default function OrionOverview() {
   const [savedBanner, setSavedBanner] = useState(false);
   const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
 
-  const { data, isLoading } = useQuery<any>({ queryKey: ["/api/cpg/orion/overview"] });
-  const { data: models } = useQuery<any[]>({ queryKey: ["/api/cpg/models"] });
+  const { data, isLoading } = useQuery<any>({ queryKey: ["/api/cpg/baseline_modelling/orion/overview"] });
+  const { data: models } = useQuery<any[]>({ queryKey: ["/api/cpg/baseline_modelling/models"] });
   const { data: modelRiskDist } = useQuery<any>({
-    queryKey: ["/api/cpg/orion/risk-distribution", selectedModelId],
+    queryKey: ["/api/cpg/baseline_modelling/orion/risk-distribution", selectedModelId],
     queryFn: () =>
-      fetch(`/api/cpg/orion/risk-distribution${selectedModelId ? `?modelId=${selectedModelId}` : ""}`)
+      fetch(`/api/cpg/baseline_modelling/orion/risk-distribution${selectedModelId ? `?modelId=${selectedModelId}` : ""}`)
         .then(r => r.json()),
   });
   const { data: codeFiles } = useQuery<CodeFileTab[]>({
-    queryKey: ["/api/code/files"],
+    queryKey: ["/api/cpg/baseline_modelling/code/files"],
   });
   const {
     data: codeFile,
     isLoading: codeLoading,
   } = useQuery<CodeFileContent>({
-    queryKey: ["/api/code", activeFileId],
+    queryKey: ["/api/cpg/baseline_modelling/code", activeFileId],
     enabled: codeOpen && Boolean(activeFileId),
   });
 
   const deployMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/models/${id}/deploy`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/cpg/models"] }); qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] }); toast({ title: "Model deployed" }); },
+    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/baseline_modelling/models/${id}/deploy`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/cpg/baseline_modelling/models"] }); qc.invalidateQueries({ queryKey: ["/api/cpg/baseline_modelling/orion/overview"] }); toast({ title: "Model deployed" }); },
   });
   const undeployMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/models/${id}/undeploy`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/cpg/models"] }); qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] }); toast({ title: "Model undeployed" }); },
+    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/baseline_modelling/models/${id}/undeploy`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/cpg/baseline_modelling/models"] }); qc.invalidateQueries({ queryKey: ["/api/cpg/baseline_modelling/orion/overview"] }); toast({ title: "Model undeployed" }); },
   });
   const saveMut = useMutation({
     mutationFn: async ({ fileId, content }: { fileId: string; content: string }) => {
-      const response = await apiRequest("PUT", `/api/code/${fileId}`, { content });
+      const response = await apiRequest("PUT", `/api/cpg/baseline_modelling/code/${fileId}`, { content });
       return response.json();
     },
     onSuccess: async () => {
-      await qc.invalidateQueries({ queryKey: ["/api/code", activeFileId] });
+      await qc.invalidateQueries({ queryKey: ["/api/cpg/baseline_modelling/code", activeFileId] });
       setEditMode(false);
       setSavedBanner(true);
       setTimeout(() => setSavedBanner(false), 2500);
@@ -109,23 +108,9 @@ export default function OrionOverview() {
   };
 
   const kpis = data?.kpis || {};
-  const riskDist = data?.riskDistribution || { low: 0, medium: 0, high: 0, veryHigh: 0 };
 
-  // Use model-specific distribution if a model is chosen, else fall back to overview data
-  const activeDist = selectedModelId && modelRiskDist?.isModel
-    ? { low: modelRiskDist.low, medium: modelRiskDist.medium, high: modelRiskDist.high, veryHigh: modelRiskDist.veryHigh }
-    : riskDist;
-
-  // Use model-specific churn rate and revenue at risk if a model is selected
-  const activeChurnRate = selectedModelId && modelRiskDist?.isModel ? modelRiskDist.churnRate : data?.churnRate;
-  const activeRevenueAtRisk = selectedModelId && modelRiskDist?.isModel ? modelRiskDist.revenueAtRisk : data?.revenueAtRisk;
-
-  const pieData = [
-    { name: "Very High Risk", value: activeDist.veryHigh || 0, color: RISK_COLORS.veryHigh },
-    { name: "High Risk", value: activeDist.high, color: RISK_COLORS.high },
-    { name: "Medium Risk", value: activeDist.medium, color: RISK_COLORS.medium },
-    { name: "Low Risk", value: activeDist.low, color: RISK_COLORS.low },
-  ];
+  // risk-distribution API returns { distribution: { low, medium, high, veryHigh }, ... }
+  const activeDist = modelRiskDist?.distribution || { low: 0, medium: 0, high: 0, veryHigh: 0 };
 
   const perfData = (data?.modelPerformance || []).slice(0, 6);
 
@@ -138,7 +123,7 @@ export default function OrionOverview() {
 
   return (
     <OrionLayout title="CPG Baseline Modelling — Orion Overview" subtitle="Baseline prediction model factory — all numbers from live database" isLoading={isLoading}>
-      <div className="mb-4"><OrionNav current="/cpg/baseline-modelling/orion/overview" /></div>
+      <div className="mb-4"><OrionNav current="/cpg/baseline-modelling/orion/overview" basePath="/cpg/baseline-modelling/orion" /></div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
         <KpiCard label="Total Runs" value={kpis.totalModels ?? "—"} />
         <KpiCard label="Deployed" value={kpis.deployedModels ?? "—"} trend={kpis.deployedModels > 0 ? "up" : undefined} />
@@ -190,19 +175,78 @@ export default function OrionOverview() {
               ? `Showing predictions from selected model`
               : "Same data powering Command Center — single source of truth"}
           </p>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={80} label={({ name, value }) => `${name}: ${value}`} labelLine={false}>
-                {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-              </Pie>
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="flex gap-4 mt-2 justify-center text-xs">
-            <span>Forecast Error: <strong className="text-red-500">{activeChurnRate}%</strong></span>
-            <span>Revenue Impact: <strong className="text-emerald-500">${((activeRevenueAtRisk || 0) / 1000).toFixed(0)}K</strong></span>
-          </div>
+          {(() => {
+            const bands = [
+              { band: "Very High (≥30%)", count: activeDist.veryHigh || 0, fill: "#dc2626" },
+              { band: "High (15–30%)",    count: activeDist.high     || 0, fill: "#f97316" },
+              { band: "Medium (5–15%)",   count: activeDist.medium   || 0, fill: "#f59e0b" },
+              { band: "On Track (<5%)",   count: activeDist.low      || 0, fill: "#22c55e" },
+            ];
+            const total = bands.reduce((s, d) => s + d.count, 0);
+            const pieData = bands.filter(d => d.count > 0);
+            const avgWmape = modelRiskDist?.avgWmape;
+            const modelCount = modelRiskDist?.modelCount ?? 0;
+            return total === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-10">
+                No trained models yet — run a baseline experiment to see deviation distribution.
+              </p>
+            ) : (
+              <>
+                {/* Donut chart with center label */}
+                <div className="relative flex justify-center">
+                  <PieChart width={200} height={180}>
+                    <Pie
+                      data={pieData}
+                      dataKey="count"
+                      nameKey="band"
+                      cx="50%"
+                      cy="50%"
+                      innerRadius={52}
+                      outerRadius={80}
+                      paddingAngle={2}
+                    >
+                      {pieData.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+                    </Pie>
+                    <Tooltip
+                      formatter={(v: any, name: any) => [
+                        `${Number(v).toLocaleString()} rows (${total > 0 ? ((Number(v) / total) * 100).toFixed(1) : 0}%)`,
+                        name,
+                      ]}
+                      contentStyle={{ fontSize: 11 }}
+                    />
+                  </PieChart>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-base font-bold leading-tight">{total.toLocaleString()}</span>
+                    <span className="text-[9px] text-muted-foreground">total rows</span>
+                  </div>
+                </div>
+                {/* Legend */}
+                <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mt-1 mb-3">
+                  {bands.map(d => (
+                    <span key={d.band} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <span className="inline-block w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: d.fill }} />
+                      {d.band}
+                      {total > 0 && (
+                        <span className="font-medium text-foreground">
+                          {((d.count / total) * 100).toFixed(0)}%
+                        </span>
+                      )}
+                    </span>
+                  ))}
+                </div>
+                {/* Footer metrics */}
+                <div className="flex gap-4 justify-center text-xs border-t pt-2">
+                  <span>
+                    Avg WMAPE:{" "}
+                    <strong className={avgWmape != null && avgWmape > 0.15 ? "text-red-500" : "text-emerald-500"}>
+                      {avgWmape != null ? `${(avgWmape * 100).toFixed(1)}%` : "—"}
+                    </strong>
+                  </span>
+                  <span>Models: <strong>{modelCount}</strong></span>
+                </div>
+              </>
+            );
+          })()}
         </div>
       </div>
 
@@ -258,12 +302,11 @@ export default function OrionOverview() {
               <div className="flex items-center justify-between px-4 py-2 bg-muted/10 border-b text-[10px] text-muted-foreground">
                 <div className="flex items-center gap-4">
                   <span className="font-mono text-foreground font-medium">
-                    {activeFileId === "train_model" ? "server/python-ml/train_model.py" :
+                    {activeFileId === "train_model" ? "ML_backend/python-ml/cpg/baseline_modelling/baseline_prediction.py" :
                      activeFileId === "schema" ? "fastapi_server/schemas.py" :
                      activeFileId === "storage" ? "fastapi_server/storage.py" :
                      activeFileId === "engine" ? "fastapi_server/services/custom_features.py" :
                      activeFileId === "seed" ? "fastapi_server/storage.py" :
-                     activeFileId === "calculate_shap" ? "server/python-ml/calculate_shap.py" :
                      activeFileId === "ml_service" ? "fastapi_server/services/ml_service.py" :
                      activeFileId === "models" ? "fastapi_server/models.py" : activeFileId}
                   </span>

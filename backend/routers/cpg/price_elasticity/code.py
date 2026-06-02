@@ -1,65 +1,51 @@
 """
-Code Explorer — lets the UI read and edit the Python backend source files.
-Updated to point to Python files (replacing the old TypeScript references).
+Code Explorer — lets the UI read and edit the Python price elasticity ML source files.
 """
 from __future__ import annotations
-import re
 from datetime import datetime
 from pathlib import Path
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from sqlalchemy.orm import Session
 from database import get_db
+from fastapi import Depends
 import storage
 
-router = APIRouter(prefix="/api", tags=["code"])
+router = APIRouter(tags=["cpg_price_elasticity_code"])
 
-_ROOT = Path(__file__).parent.parent.parent.parent.parent
-
-# Allowlist of files that the code explorer can read/write.
-# Updated to reference Python files instead of TypeScript originals.
-_ML_SCRIPTS = _ROOT / "ML_backend" / "python-ml" / "tmt" / "customer_churn"
+_ROOT = Path(__file__).resolve().parents[4]
+_ML_SCRIPTS = _ROOT / "ML_backend" / "python-ml" / "cpg" / "price_elasticity"
 _BACKEND = _ROOT / "backend"
 
 CODE_FILE_MAP: dict[str, dict] = {
-    "train_model": {
-        "path": _ML_SCRIPTS / "train_model.py",
-        "label": "ML Trainer",
-        "description": "Python ML engine: feature engineering, model selection, and training logic",
+    "elasticity_model": {
+        "path": _ML_SCRIPTS / "elasticity_model.py",
+        "label": "Elasticity Model",
+        "description": "Mixed Linear Model (statsmodels) — dynamic formula building and fitting",
+    },
+    "preprocessing": {
+        "path": _ML_SCRIPTS / "preprocessing.py",
+        "label": "Preprocessing",
+        "description": "Data cleaning, log-transforms, and feature engineering for price elasticity",
+    },
+    "aggregation": {
+        "path": _ML_SCRIPTS / "aggregation.py",
+        "label": "Aggregation",
+        "description": "Weighted elasticity aggregation by SKU, brand, category, region, channel, store",
+    },
+    "pipeline": {
+        "path": _ML_SCRIPTS / "pipeline.py",
+        "label": "Pipeline",
+        "description": "End-to-end pipeline orchestration: load → preprocess → train → aggregate → save",
     },
     "storage": {
         "path": _BACKEND / "storage.py",
         "label": "Storage Layer",
         "description": "Data access layer — all CRUD and analytics operations (FastAPI/SQLAlchemy)",
     },
-    "engine": {
-        "path": _BACKEND / "services" / "custom_features.py",
-        "label": "Feature Engine",
-        "description": "Custom feature engine: lag, trend, rolling, ratio, flag, interaction",
-    },
-    "ml_service": {
-        "path": _BACKEND / "services" / "ml_service.py",
-        "label": "ML Service",
-        "description": "Calls Python ML scripts — bridges FastAPI routes to ML training scripts",
-    },
-    "calculate_shap": {
-        "path": _ML_SCRIPTS / "calculate_shap.py",
-        "label": "SHAP Explainer",
-        "description": "Python script for SHAP model explanations and feature contributions",
-    },
     "models": {
         "path": _BACKEND / "models.py",
         "label": "ORM Models",
         "description": "SQLAlchemy ORM models — mirrors the PostgreSQL database schema",
-    },
-    "schema": {
-        "path": _BACKEND / "schemas.py",
-        "label": "Data Schema",
-        "description": "Pydantic request/response schemas and type definitions for all entities",
-    },
-    "seed": {
-        "path": _BACKEND / "storage.py",
-        "label": "Storage & Analytics",
-        "description": "All CRUD operations, analytics computations, and business logic for the database layer",
     },
 }
 
@@ -107,40 +93,9 @@ def update_code_file(file_id: str, body: dict, db: Session = Depends(get_db)):
         "entity_type": "code",
         "entity_id": 0,
         "entity_name": meta["label"],
-        "detail": f"Backend file {meta['label']} modified via Code Explorer",
+        "detail": f"Price elasticity file {meta['label']} modified via Code Explorer",
         "user": "ml-ops-user",
         "team": "ML Ops",
         "status": "success",
     })
     return {"success": True, "lines": content.count("\n") + 1, "savedAt": datetime.utcnow().isoformat()}
-
-
-@router.get("/orion/algorithms")
-def list_algorithms():
-    """Read algorithm names directly from train_model.py."""
-    train_path = _ML_SCRIPTS / "train_model.py"
-    algos = [{"value": "Auto", "label": "Auto (Best Model)", "desc": "Trains multiple models and selects the best performer"}]
-
-    try:
-        content = train_path.read_text(encoding="utf-8")
-        match = re.search(r"MODEL_FAMILY_DISPLAY_NAMES\s*=\s*\{([^}]+)\}", content, re.DOTALL)
-        if match:
-            dict_content = match.group(1)
-            for m in re.finditer(r"'([^']+)':\s*'([^']+)'", dict_content):
-                label = m.group(2)
-                if label not in {a["value"] for a in algos}:
-                    algos.append({"value": label, "label": label, "desc": f"ML algorithm: {label}"})
-        else:
-            algos += [
-                {"value": "Random Forest", "label": "Random Forest", "desc": "Ensemble of decision trees"},
-                {"value": "XGBoost", "label": "XGBoost", "desc": "Gradient boosting"},
-                {"value": "LightGBM", "label": "LightGBM", "desc": "Fast gradient boosting"},
-                {"value": "Logistic Regression", "label": "Logistic Regression", "desc": "Linear classifier"},
-            ]
-    except Exception:
-        algos += [
-            {"value": "Random Forest", "label": "Random Forest", "desc": "Ensemble of decision trees"},
-            {"value": "XGBoost", "label": "XGBoost", "desc": "Gradient boosting"},
-        ]
-
-    return algos

@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from fastapi import APIRouter, HTTPException
@@ -7,7 +7,7 @@ from fastapi import Depends
 from database import get_db
 import storage
 
-router = APIRouter(prefix="/api", tags=["notebook"])
+router = APIRouter(prefix="", tags=["notebook"])
 
 _ROOT = Path(__file__).parent.parent.parent
 _EXCEL_FILE = _ROOT / "final_latest_customer_recommendations.xlsx"

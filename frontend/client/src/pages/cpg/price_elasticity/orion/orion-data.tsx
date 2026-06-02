@@ -195,7 +195,7 @@ export default function OrionDataPage() {
   const [qualitySource, setQualitySource] = useState<"live" | number>("live");
   const [ingestTab, setIngestTab] = useState<"file" | "db" | "live">("file");
   const [edaTab, setEdaTab] = useState<EdaTab>("Overview");
-  const [edaSource, setEdaSource] = useState<"live" | number>("live");
+  const [edaSource, setEdaSource] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Dataset | null>(null);
   const [selectedNumCol, setSelectedNumCol] = useState<string>("tenureMonths");
   const [selectedCatCol, setSelectedCatCol] = useState<string>("region");
@@ -212,28 +212,29 @@ export default function OrionDataPage() {
   const [dragOver, setDragOver] = useState(false);
   const [dbForm, setDbForm] = useState({ host: "", port: "5432", dbname: "", user: "", password: "" });
 
-  const { data: datasets = [] } = useQuery<Dataset[]>({ queryKey: ["/api/datasets"] });
-  const { data: eda, isLoading: edaLoading } = useQuery<any>({
-    queryKey: ["/api/orion/eda-live"],
-    staleTime: 60000,
-  });
+  const API_BASE = "/api/cpg/price_elasticity";
+
+  const { data: datasets = [] } = useQuery<Dataset[]>({ queryKey: [`${API_BASE}/datasets`] });
 
   // Fetch feature importance from dataset's trained model (only when dataset is selected)
-  const { data: allModels = [] } = useQuery<any[]>({ queryKey: ["/api/models"] });
+  const { data: allModels = [] } = useQuery<any[]>({ queryKey: [`${API_BASE}/models`] });
 
   // Models that were trained on the currently selected dataset
+  // Backend returns snake_case keys: dataset_id, feature_importance
   const datasetsModels = selectedFeatureDataset
-    ? (allModels as any[]).filter((m: any) => m.datasetId === selectedFeatureDataset && m.featureImportance)
+    ? (allModels as any[]).filter((m: any) =>
+      (m.dataset_id ?? m.datasetId) === selectedFeatureDataset
+    )
     : [];
 
   const { data: modelFeatures, isLoading: featuresLoading } = useQuery<any>({
-    queryKey: ["/api/models/latest/features", selectedFeatureDataset, selectedFeatureModelId],
+    queryKey: [`${API_BASE}/models/latest/features`, selectedFeatureDataset, selectedFeatureModelId],
     queryFn: async () => {
       if (selectedFeatureDataset === null) return null;
       const params = selectedFeatureModelId
         ? `modelId=${selectedFeatureModelId}`
         : `datasetId=${selectedFeatureDataset}`;
-      const url = `/api/models/latest/features?${params}`;
+      const url = `${API_BASE}/models/latest/features?${params}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -247,9 +248,9 @@ export default function OrionDataPage() {
     features: CustomFeatureDefinition[];
     availableColumns: Array<{ name: string; type: string }>;
   }>({
-    queryKey: ["/api/datasets", selectedFeatureDataset, "custom-features"],
+    queryKey: [`${API_BASE}/datasets`, selectedFeatureDataset, "custom-features"],
     queryFn: async () => {
-      const res = await fetch(`/api/datasets/${selectedFeatureDataset}/custom-features`);
+      const res = await fetch(`${API_BASE}/datasets/${selectedFeatureDataset}/custom-features`);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
     },
@@ -262,10 +263,10 @@ export default function OrionDataPage() {
   const hasAccountNumber = builderColumns.some(c => c.name === "account_number");
 
   const { data: suggestedFeatures = [], isLoading: suggestionsLoading } = useQuery<any[]>({
-    queryKey: ["/api/datasets", selectedFeatureDataset, "feature-suggestions"],
+    queryKey: [`${API_BASE}/datasets`, selectedFeatureDataset, "feature-suggestions"],
     queryFn: async () => {
       if (selectedFeatureDataset === null) return [];
-      const res = await fetch(`/api/datasets/${selectedFeatureDataset}/feature-suggestions`);
+      const res = await fetch(`${API_BASE}/datasets/${selectedFeatureDataset}/feature-suggestions`);
       if (!res.ok) throw new Error(await res.text());
       const json = await res.json();
       return Array.isArray(json.suggestions) ? json.suggestions : [];
@@ -281,12 +282,12 @@ export default function OrionDataPage() {
         ...suggestion,
         status: suggestion.status || "ready",
       };
-      const res = await apiRequest("POST", `/api/datasets/${selectedFeatureDataset}/custom-features`, body);
+      const res = await apiRequest("POST", `${API_BASE}/datasets/${selectedFeatureDataset}/custom-features`, body);
       return res.json();
     },
     onSuccess: (data: any) => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets", selectedFeatureDataset, "custom-features"] });
-      qc.invalidateQueries({ queryKey: ["/api/datasets", selectedFeatureDataset, "feature-suggestions"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`, selectedFeatureDataset, "custom-features"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`, selectedFeatureDataset, "feature-suggestions"] });
       setStagedFeatures((prev) => new Set(prev).add(data.feature.id));
       toast({ title: "Feature added", description: `${data.feature.name} has been added to this dataset.` });
     },
@@ -302,7 +303,7 @@ export default function OrionDataPage() {
   const previewFeatureMut = useMutation({
     mutationFn: async () => {
       if (selectedFeatureDataset === null) throw new Error("Select a dataset first");
-      const res = await apiRequest("POST", `/api/datasets/${selectedFeatureDataset}/custom-features/preview`, buildFeaturePayload(featureDraft));
+      const res = await apiRequest("POST", `${API_BASE}/datasets/${selectedFeatureDataset}/custom-features/preview`, buildFeaturePayload(featureDraft));
       return res.json();
     },
     onSuccess: (data) => {
@@ -315,12 +316,12 @@ export default function OrionDataPage() {
   const saveFeatureMut = useMutation({
     mutationFn: async () => {
       if (selectedFeatureDataset === null) throw new Error("Select a dataset first");
-      const res = await apiRequest("POST", `/api/datasets/${selectedFeatureDataset}/custom-features`, buildFeaturePayload(featureDraft));
+      const res = await apiRequest("POST", `${API_BASE}/datasets/${selectedFeatureDataset}/custom-features`, buildFeaturePayload(featureDraft));
       return res.json();
     },
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets"] });
-      qc.invalidateQueries({ queryKey: ["/api/datasets", selectedFeatureDataset, "custom-features"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`, selectedFeatureDataset, "custom-features"] });
       setFeatureDraft(createFeatureDraft(featureDraft.type));
       setFeatureFormula("");
       setFeaturePreview([]);
@@ -333,11 +334,11 @@ export default function OrionDataPage() {
   const deleteFeatureMut = useMutation({
     mutationFn: async (featureId: string) => {
       if (selectedFeatureDataset === null) throw new Error("Select a dataset first");
-      await apiRequest("DELETE", `/api/datasets/${selectedFeatureDataset}/custom-features/${featureId}`);
+      await apiRequest("DELETE", `${API_BASE}/datasets/${selectedFeatureDataset}/custom-features/${featureId}`);
       return featureId;
     },
     onSuccess: (featureId) => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets", selectedFeatureDataset, "custom-features"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`, selectedFeatureDataset, "custom-features"] });
       if (featureDraft.id === featureId) {
         setFeatureDraft(createFeatureDraft());
         setFeatureFormula("");
@@ -353,12 +354,12 @@ export default function OrionDataPage() {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("name", uploadName || file.name.replace(".csv", ""));
-      const r = await fetch("/api/datasets/upload", { method: "POST", body: fd });
+      const r = await fetch(`${API_BASE}/datasets/upload`, { method: "POST", body: fd });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
     },
     onSuccess: (d) => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`] });
       setActiveTab("registry");
       toast({ title: "Dataset uploaded", description: `${d.rowCount.toLocaleString()} rows ingested` });
     },
@@ -366,9 +367,9 @@ export default function OrionDataPage() {
   });
 
   const deleteMut = useMutation({
-    mutationFn: (id: number) => apiRequest("DELETE", `/api/datasets/${id}`),
+    mutationFn: (id: number) => apiRequest("DELETE", `${API_BASE}/datasets/${id}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`] });
       toast({ title: "Dataset deleted" });
       setDeleteTarget(null);
     },
@@ -376,22 +377,38 @@ export default function OrionDataPage() {
   });
 
   const edaMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/datasets/${id}/eda`, { targetColumn: "is_churned" }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets"] });
+    mutationFn: async (id: number) => {
+      const res = await apiRequest("POST", `${API_BASE}/datasets/${id}/eda?usecase=price_elasticity`);
+      return res.json();
+    },
+    onSuccess: async () => {
+      await qc.invalidateQueries({
+        queryKey: [`${API_BASE}/datasets`]
+      });
+
       toast({ title: "EDA complete", description: "Analysis has been generated for this dataset." });
     },
-    onError: (e: any) => toast({ title: "EDA failed", description: e.message, variant: "destructive" }),
+    onError: (e: any) => toast({ title: "EDA failed", description: String(e?.message ?? e), variant: "destructive" }),
   });
 
-  const selectedDataset = edaSource !== "live" ? datasets.find(d => d.id === edaSource) ?? null : null;
-  const dsEda = selectedDataset ? (selectedDataset as any).edaReport as any : null;
-  const dsQuality = selectedDataset ? (selectedDataset as any).qualityReport as any : null;
-  const activeEda = edaSource === "live" ? eda : dsEda;
-  const isActiveEdaPending = edaSource === "live" ? edaLoading : edaMut.isPending;
-  const hasActiveEda = Boolean(activeEda);
-  const sourceLabel = edaSource === "live" ? "Customers" : "Rows";
+  const selectedDataset =
+    edaSource != null
+      ? datasets.find(d => d.id === edaSource) ?? null
+      : null;
+  const rawEda = selectedDataset ? ((selectedDataset as any).edaReport || (selectedDataset as any).eda_report) : null;
+  const dsEda = rawEda ? (rawEda["priceElasticity"] || rawEda["price_elasticity"] || rawEda) : null;
+  const activeEda = dsEda;
+  const isActiveEdaPending = edaMut.isPending;
 
+  useEffect(() => {
+    if (
+      activeTab === "eda" &&
+      edaSource === null &&
+      datasets.length > 0
+    ) {
+      setEdaSource(datasets[0].id);
+    }
+  }, [activeTab, edaSource, datasets.length]);
   function handleFileDrop(files: FileList | null) {
     if (!files || files.length === 0) return;
     const file = files[0];
@@ -434,9 +451,9 @@ export default function OrionDataPage() {
   const currentFeatureType = FEATURE_TYPE_OPTIONS.find((option) => option.value === featureDraft.type) || FEATURE_TYPE_OPTIONS[0];
 
   return (
-    <OrionLayout title="Data Hub" subtitle="Dataset registry, EDA, and Feature Engineering" isLoading={edaLoading}>
+    <OrionLayout title="Data Hub" subtitle="Dataset registry, EDA, and Feature Engineering" isLoading={isActiveEdaPending}>
       <div className="space-y-4">
-        <OrionNav current="/tmt/customer-churn/orion/data" />
+        <OrionNav current="/cpg/price-elasticity/orion/data" basePath="/cpg/price-elasticity/orion" />
 
         <div className="flex gap-1 border-b">
           {(["ingest", "registry", "eda", "quality", "features"] as const).map(t => (
@@ -444,9 +461,8 @@ export default function OrionDataPage() {
               key={t}
               onClick={() => setActiveTab(t)}
               data-testid={`tab-${t}`}
-              className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
-                activeTab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
+              className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors ${activeTab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
             >
               {t === "ingest" ? "Ingest Data" : t === "eda" ? "EDA / Analysis" : t === "features" ? "Feature Builder" : t === "quality" ? "Data Quality" : "Dataset Registry"}
             </button>
@@ -462,9 +478,8 @@ export default function OrionDataPage() {
                   key={t}
                   onClick={() => setIngestTab(t)}
                   data-testid={`tab-ingest-${t}`}
-                  className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${
-                    ingestTab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-                  }`}
+                  className={`px-4 py-2 text-xs font-medium border-b-2 transition-colors flex items-center gap-1.5 ${ingestTab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}
                 >
                   {t === "file" && <Upload className="w-3 h-3" />}
                   {t === "db" && <Database className="w-3 h-3" />}
@@ -487,9 +502,8 @@ export default function OrionDataPage() {
                   />
                 </div>
                 <div
-                  className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors ${
-                    dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-                  }`}
+                  className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors ${dragOver ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                    }`}
                   onDragOver={e => { e.preventDefault(); setDragOver(true); }}
                   onDragLeave={() => setDragOver(false)}
                   onDrop={e => { e.preventDefault(); setDragOver(false); handleFileDrop(e.dataTransfer.files); }}
@@ -657,13 +671,13 @@ export default function OrionDataPage() {
             <div className="flex items-center gap-3 bg-muted/40 border rounded-lg px-4 py-3">
               <span className="text-xs font-medium text-muted-foreground whitespace-nowrap">Data Source:</span>
               <div className="flex gap-2 flex-wrap">
-                <button
+                {/* <button
                   onClick={() => setEdaSource("live")}
                   data-testid="eda-source-live"
                   className={`flex items-center gap-1.5 px-3 py-1 text-xs rounded-full border transition-colors ${edaSource === "live" ? "bg-primary text-primary-foreground border-primary" : "bg-background border-border text-muted-foreground hover:border-primary/50"}`}
                 >
                   <Activity className="w-3 h-3" /> Live Customer DB
-                </button>
+                </button> */}
                 {datasets.map(ds => (
                   <button
                     key={ds.id}
@@ -707,7 +721,7 @@ export default function OrionDataPage() {
             )}
 
             {/* Unified tab buttons — live or dataset with EDA */}
-            {(edaSource === "live" || dsEda) && !edaMut.isPending && (
+            {dsEda && !edaMut.isPending && (
               <div className="flex gap-1 flex-wrap">
                 {EDA_TABS.map(t => (
                   <button key={t} onClick={() => setEdaTab(t)} data-testid={`tab-eda-${t.toLowerCase().replace(/\s+/g, "-")}`}
@@ -717,7 +731,7 @@ export default function OrionDataPage() {
                 ))}
               </div>
             )}
-            {isActiveEdaPending && <div className="text-center py-12 text-muted-foreground text-sm">Analyzing {edaSource === "live" ? "live customer database" : selectedDataset?.name}…</div>}
+            {isActiveEdaPending && (<div className="text-center py-12 text-muted-foreground text-sm">  Analyzing {selectedDataset?.name}…</div>)}
             {!isActiveEdaPending && activeEda && (
               <>
                 {edaTab === "Overview" && activeEda.overview && (
@@ -739,45 +753,48 @@ export default function OrionDataPage() {
                       </div>
                     )}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <KpiCard label={`Total ${sourceLabel}`} value={activeEda.overview.totalRows.toLocaleString()} color="blue" />
-                      <KpiCard label="Churned" value={activeEda.overview.churnedRows.toLocaleString()} color="red" sub={`${activeEda.overview.churnRate}% churn rate`} />
-                      <KpiCard label="Retained" value={activeEda.overview.retainedRows.toLocaleString()} color="green" />
-                      <KpiCard label="Features" value={activeEda.overview.features} sub={`${activeEda.overview.numericFeatures} numeric · ${activeEda.overview.categoricalFeatures} categorical`} />
+                      <KpiCard label="Total Rows" value={(activeEda.overview.totalRows ?? 0).toLocaleString()} color="blue" />
+                      <KpiCard label="SKUs" value={activeEda.overview.skuCount?.toLocaleString() ?? "—"} color="blue" />
+                      <KpiCard label="Stores" value={activeEda.overview.storeCount?.toLocaleString() ?? "—"} color="green" />
+                      <KpiCard label="Brands" value={activeEda.overview.brandCount?.toLocaleString() ?? "—"} color="green" />
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <KpiCard label="Weeks" value={activeEda.overview.weekCount?.toLocaleString() ?? "—"} />
+                      <KpiCard label="Categories" value={activeEda.overview.categoryCount?.toLocaleString() ?? "—"} />
+                      <KpiCard label="Total Sales Units" value={activeEda.overview.totalSalesUnits != null ? Number(activeEda.overview.totalSalesUnits).toLocaleString() : "—"} />
+                      <KpiCard label="Avg Price" value={activeEda.overview.avgPrice != null ? `$${activeEda.overview.avgPrice}` : "—"} />
+                    </div>
+                    {activeEda.competitorPricing && Object.keys(activeEda.competitorPricing).length > 0 && (
                       <div className="bg-card border rounded-lg p-4">
-                        <h4 className="text-xs font-semibold mb-4 uppercase tracking-wider text-muted-foreground">Class Balance</h4>
-                        <div className="flex items-end gap-6 h-28 justify-center">
+                        <h4 className="text-xs font-semibold mb-3 uppercase tracking-wider text-muted-foreground">Competitor Pricing Overview</h4>
+                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                           {[
-                            { label: "Retained", value: activeEda.overview.retainedRows, color: "bg-emerald-500", total: activeEda.overview.totalRows },
-                            { label: "Churned", value: activeEda.overview.churnedRows, color: "bg-red-500", total: activeEda.overview.totalRows },
-                          ].map(b => {
-                            const pct = b.total > 0 ? b.value / b.total : 0;
-                            return (
-                              <div key={b.label} className="flex flex-col items-center gap-1 w-20">
-                                <span className="text-[10px] font-mono font-bold">{(pct * 100).toFixed(1)}%</span>
-                                <div className="w-full rounded overflow-hidden" style={{ height: `${Math.max(8, pct * 80)}px` }}>
-                                  <div className={`w-full h-full ${b.color} opacity-80`} />
-                                </div>
-                                <span className="text-[10px] text-muted-foreground">{b.label}</span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                      <div className="bg-card border rounded-lg p-4">
-                        <h4 className="text-xs font-semibold mb-3 uppercase tracking-wider text-muted-foreground">Completeness by Field</h4>
-                        <div className="space-y-2">
-                          {Object.entries(activeEda.numericStats || {}).slice(0, 7).map(([col, s]: [string, any]) => (
-                            <div key={col} className="flex items-center gap-2 text-xs">
-                              <span className="w-32 text-muted-foreground truncate">{col}</span>
-                              <div className="flex-1 h-2 bg-muted rounded overflow-hidden">
-                                <div className="h-full bg-emerald-500 rounded" style={{ width: `${s.completeness}%` }} />
-                              </div>
-                              <span className="font-mono text-[10px] w-10 text-right">{s.completeness}%</span>
+                            { label: "Own Price Avg", value: activeEda.competitorPricing.ownPriceAvg },
+                            { label: "Comp1 Price Avg", value: activeEda.competitorPricing.comp1PriceAvg },
+                            { label: "Comp2 Price Avg", value: activeEda.competitorPricing.comp2PriceAvg },
+                            { label: "Price Index vs Comp1", value: activeEda.competitorPricing.priceIndexVsComp1 },
+                            { label: "Price Index vs Comp2", value: activeEda.competitorPricing.priceIndexVsComp2 },
+                          ].filter(x => x.value != null).map(x => (
+                            <div key={x.label} className="text-center p-3 bg-muted/30 rounded-lg">
+                              <div className="text-lg font-bold font-mono">{typeof x.value === 'number' ? x.value.toFixed(3) : x.value}</div>
+                              <div className="text-[10px] text-muted-foreground mt-1">{x.label}</div>
                             </div>
                           ))}
                         </div>
+                      </div>
+                    )}
+                    <div className="bg-card border rounded-lg p-4">
+                      <h4 className="text-xs font-semibold mb-3 uppercase tracking-wider text-muted-foreground">Completeness by Field</h4>
+                      <div className="space-y-2">
+                        {Object.entries(activeEda.numericStats || {}).slice(0, 8).map(([col, s]: [string, any]) => (
+                          <div key={col} className="flex items-center gap-2 text-xs">
+                            <span className="w-32 text-muted-foreground truncate">{col}</span>
+                            <div className="flex-1 h-2 bg-muted rounded overflow-hidden">
+                              <div className="h-full bg-emerald-500 rounded" style={{ width: `${s.completeness}%` }} />
+                            </div>
+                            <span className="font-mono text-[10px] w-10 text-right">{s.completeness}%</span>
+                          </div>
+                        ))}
                       </div>
                     </div>
                   </div>
@@ -800,10 +817,12 @@ export default function OrionDataPage() {
                             <StatRow label="Min / Max" value={`${selectedNum.min} / ${selectedNum.max}`} />
                             <StatRow label="Q1 / Q3" value={`${selectedNum.q1} / ${selectedNum.q3}`} />
                             <StatRow label="Missing" value={`${selectedNum.nullCount ?? 0} (${(100 - (selectedNum.completeness ?? 100)).toFixed(1)}%)`} />
-                            <div className="pt-1 mt-1 border-t border-border/30">
-                              <StatRow label="Churn cohort avg" value={selectedNum.churnMean} />
-                              <StatRow label="Retained cohort avg" value={selectedNum.retainedMean} />
-                            </div>
+                            {(selectedNum.promoMean != null || selectedNum.nonPromoMean != null) && (
+                              <div className="pt-1 mt-1 border-t border-border/30">
+                                <StatRow label="Promo avg" value={selectedNum.promoMean} />
+                                <StatRow label="Non-promo avg" value={selectedNum.nonPromoMean} />
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -829,9 +848,8 @@ export default function OrionDataPage() {
                         <div className="mt-3 space-y-1">
                           {selectedCat.top?.map((item: any) => {
                             const mx = selectedCat.top[0]?.count || 1;
-                            return <HistogramBar key={item.label} label={item.label} count={item.count} max={mx} churnCount={item.churnCount} />;
+                            return <HistogramBar key={item.label} label={item.label} count={item.count} max={mx} />;
                           })}
-                          <p className="text-[9px] text-muted-foreground mt-2">Red fill = churned proportion within bar</p>
                         </div>
                       )}
                     </div>
@@ -841,42 +859,40 @@ export default function OrionDataPage() {
                 {edaTab === "Bivariate" && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="bg-card border rounded-lg p-4">
-                      <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Churn Rate by Credit Profile</h4>
-                      <div className="space-y-3">
-                        {(activeEda.bivariate?.riskCategory || []).map((item: any, idx: number) => {
-                          const colors = ["bg-red-500", "bg-amber-500", "bg-blue-500", "bg-purple-500", "bg-emerald-500"];
+                      <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Brand Distribution by Volume</h4>
+                      <div className="space-y-2">
+                        {(activeEda.brandDist || []).slice(0, 12).map((item: any) => {
+                          const maxUnits = Math.max(...(activeEda.brandDist || []).map((x: any) => x.totalUnits || 0), 1);
                           return (
-                            <div key={item.label} className="space-y-1">
+                            <div key={item.brand} className="space-y-0.5">
                               <div className="flex justify-between text-xs">
-                                <span className="capitalize font-medium">{item.label}</span>
-                                <span className="font-mono text-red-400">{item.churnRate}% churn</span>
+                                <span className="font-medium truncate max-w-[120px]">{item.brand}</span>
+                                <span className="font-mono text-blue-400">{Number(item.totalUnits).toLocaleString()} units</span>
                               </div>
-                              <div className="h-3 bg-muted rounded overflow-hidden">
-                                <div className={`h-full rounded ${colors[idx % colors.length]}`}
-                                  style={{ width: `${Math.min(item.churnRate, 100)}%` }} />
+                              <div className="h-2.5 bg-muted rounded overflow-hidden">
+                                <div className="h-full bg-blue-500/70 rounded" style={{ width: `${(item.totalUnits / maxUnits) * 100}%` }} />
                               </div>
-                              <span className="text-[9px] text-muted-foreground">{item.total.toLocaleString()} customers · {item.churned} churned</span>
+                              {item.avgPrice != null && <span className="text-[9px] text-muted-foreground">avg price: ${item.avgPrice}</span>}
                             </div>
                           );
                         })}
                       </div>
                     </div>
                     <div className="bg-card border rounded-lg p-4">
-                      <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Avg Monthly Revenue by Loyalty Status</h4>
-                      <p className="text-[10px] text-muted-foreground mb-3">bill_amount summed / snapshot months per account</p>
-                      <div className="space-y-3">
-                        {(activeEda.bivariate?.valueTier || []).filter((item: any) => item.total > 0).map((item: any) => {
-                          const maxRev = Math.max(...(activeEda.bivariate?.valueTier || []).map((x: any) => x.avgRevenue || 0), 1);
+                      <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Category Distribution by Volume</h4>
+                      <div className="space-y-2">
+                        {(activeEda.categoryDist || []).slice(0, 12).map((item: any) => {
+                          const maxUnits = Math.max(...(activeEda.categoryDist || []).map((x: any) => x.totalUnits || 0), 1);
                           return (
-                            <div key={item.label} className="space-y-1">
+                            <div key={item.category} className="space-y-0.5">
                               <div className="flex justify-between text-xs">
-                                <span className="capitalize font-medium">{item.label}</span>
-                                <span className="font-mono text-blue-400">${item.avgRevenue}/mo</span>
+                                <span className="font-medium truncate max-w-[120px]">{item.category}</span>
+                                <span className="font-mono text-emerald-400">{Number(item.totalUnits).toLocaleString()} units</span>
                               </div>
-                              <div className="h-3 bg-muted rounded overflow-hidden">
-                                <div className="h-full bg-blue-500 rounded" style={{ width: `${(item.avgRevenue / maxRev) * 100}%` }} />
+                              <div className="h-2.5 bg-muted rounded overflow-hidden">
+                                <div className="h-full bg-emerald-500/70 rounded" style={{ width: `${(item.totalUnits / maxUnits) * 100}%` }} />
                               </div>
-                              <span className="text-[9px] text-muted-foreground">{item.count.toLocaleString()} customers</span>
+                              {item.avgPrice != null && <span className="text-[9px] text-muted-foreground">avg price: ${item.avgPrice}</span>}
                             </div>
                           );
                         })}
@@ -886,69 +902,137 @@ export default function OrionDataPage() {
                 )}
 
                 {edaTab === "Multivariate" && (
-                  <div className="bg-card border rounded-lg overflow-hidden">
-                    <div className="px-4 py-3 border-b">
-                      <h4 className="text-xs font-semibold">Churn Rate by Loyalty Status</h4>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">Avg Revenue = sum(bill_amount) / snapshot months per account</p>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="border-b bg-muted/30">
-                            {["Loyalty Status", "Customers", "Churned", "Churn Rate", "Avg Monthly Revenue", "Risk Bar"].map(h => (
-                              <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(activeEda.multivariate || []).map((g: any, i: number) => (
-                            <tr key={i} className="border-b hover:bg-muted/10">
-                              <td className="px-3 py-2 capitalize font-medium">{g.valueTier}</td>
-                              <td className="px-3 py-2 font-mono">{g.total.toLocaleString()}</td>
-                              <td className="px-3 py-2 font-mono text-red-400">{g.churned.toLocaleString()}</td>
-                              <td className="px-3 py-2 font-mono font-bold" style={{ color: g.churnRate > 30 ? "#ef4444" : g.churnRate > 15 ? "#f59e0b" : "#10b981" }}>
-                                {g.churnRate}%
-                              </td>
-                              <td className="px-3 py-2 font-mono">${g.avgRevenue}</td>
-                              <td className="px-3 py-2 w-24">
-                                <div className="h-2 bg-muted rounded overflow-hidden">
-                                  <div className="h-full rounded" style={{ width: `${Math.min(g.churnRate, 100)}%`, backgroundColor: g.churnRate > 30 ? "#ef4444" : g.churnRate > 15 ? "#f59e0b" : "#10b981" }} />
-                                </div>
-                              </td>
+                  <div className="space-y-4">
+                    <div className="bg-card border rounded-lg overflow-hidden">
+                      <div className="px-4 py-3 border-b">
+                        <h4 className="text-xs font-semibold">Top SKUs by Volume</h4>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">SKUs ranked by total sales units</p>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b bg-muted/30">
+                              {["Rank", "SKU", "Total Units", "Volume Bar"].map(h => (
+                                <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>
+                              ))}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {(activeEda.topSkus || []).map((g: any, i: number) => {
+                              const maxUnits = Math.max(...(activeEda.topSkus || []).map((x: any) => x.totalUnits || 0), 1);
+                              return (
+                                <tr key={i} className="border-b hover:bg-muted/10">
+                                  <td className="px-3 py-2 font-mono text-muted-foreground">{i + 1}</td>
+                                  <td className="px-3 py-2 font-medium font-mono">{g.sku}</td>
+                                  <td className="px-3 py-2 font-mono">{Number(g.totalUnits).toLocaleString()}</td>
+                                  <td className="px-3 py-2 w-32">
+                                    <div className="h-2 bg-muted rounded overflow-hidden">
+                                      <div className="h-full bg-primary rounded" style={{ width: `${(g.totalUnits / maxUnits) * 100}%` }} />
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                    <div className="bg-card border rounded-lg overflow-hidden">
+                      <div className="px-4 py-3 border-b">
+                        <h4 className="text-xs font-semibold">Store Distribution by Volume</h4>
+                      </div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="border-b bg-muted/30">
+                              {["Rank", "Store", "Total Units", "Volume Bar"].map(h => (
+                                <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(activeEda.storeDist || []).map((g: any, i: number) => {
+                              const maxUnits = Math.max(...(activeEda.storeDist || []).map((x: any) => x.totalUnits || 0), 1);
+                              return (
+                                <tr key={i} className="border-b hover:bg-muted/10">
+                                  <td className="px-3 py-2 font-mono text-muted-foreground">{i + 1}</td>
+                                  <td className="px-3 py-2 font-medium">{g.store}</td>
+                                  <td className="px-3 py-2 font-mono">{Number(g.totalUnits).toLocaleString()}</td>
+                                  <td className="px-3 py-2 w-32">
+                                    <div className="h-2 bg-muted rounded overflow-hidden">
+                                      <div className="h-full bg-blue-500 rounded" style={{ width: `${(g.totalUnits / maxUnits) * 100}%` }} />
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 )}
 
                 {edaTab === "Time Trends" && (
                   <div className="bg-card border rounded-lg p-4">
-                    <h4 className="text-xs font-semibold mb-4 text-muted-foreground uppercase">Churn {"&"} Revenue by Tenure Cohort</h4>
-                    <div className="space-y-4">
-                      {(activeEda.timeTrends || []).map((t: any) => (
-                        <div key={t.bucket} className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="font-medium">{t.bucket}</span>
-                            <div className="flex gap-4 text-[10px] text-muted-foreground">
-                              <span>{t.total.toLocaleString()} customers</span>
-                              <span className="text-red-400">{t.churned} churned ({t.churnRate}%)</span>
-                              <span className="text-blue-400">${t.avgRevenue}/mo avg</span>
+                    <h4 className="text-xs font-semibold mb-4 text-muted-foreground uppercase">Weekly Sales Volume Trend</h4>
+                    {(activeEda.timeTrends || []).length === 0 && (
+                      <p className="text-xs text-muted-foreground">No time trend data available.</p>
+                    )}
+                    <div className="space-y-2">
+                      {(activeEda.timeTrends || []).map((t: any) => {
+                        const maxUnits = Math.max(...(activeEda.timeTrends || []).map((x: any) => x.totalUnits || 0), 1);
+                        return (
+                          <div key={t.week} className="space-y-0.5">
+                            <div className="flex justify-between text-xs">
+                              <span className="font-medium w-24 truncate">{t.week}</span>
+                              <div className="flex gap-4 text-[10px] text-muted-foreground">
+                                <span className="text-blue-400">{Number(t.totalUnits).toLocaleString()} units</span>
+                                {t.avgPrice != null && <span className="text-emerald-400">avg price: ${t.avgPrice}</span>}
+                              </div>
+                            </div>
+                            <div className="flex-1 h-3 bg-muted rounded overflow-hidden">
+                              <div className="h-full bg-blue-500/60 rounded" style={{ width: `${(t.totalUnits / maxUnits) * 100}%` }} />
                             </div>
                           </div>
-                          <div className="flex gap-px h-5 rounded overflow-hidden">
-                            {t.total > 0 && (
-                              <>
-                                <div className="bg-emerald-500/50" style={{ flex: t.total - t.churned }} />
-                                <div className="bg-red-500/70" style={{ flex: t.churned }} />
-                              </>
-                            )}
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
-                    <p className="text-[9px] text-muted-foreground mt-3">Green = retained · Red = churned (proportional width)</p>
+                    {(activeEda.timeTrends || []).some((t: any) => t.avgComp1Price != null) && (
+                      <div className="mt-6">
+                        <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Weekly Price Trend</h4>
+                        <div className="space-y-2">
+                          {(activeEda.timeTrends || []).map((t: any) => {
+                            const maxPrice = Math.max(
+                              ...((activeEda.timeTrends || []).map((x: any) => Math.max(x.avgPrice || 0, x.avgComp1Price || 0, x.avgComp2Price || 0))),
+                              1
+                            );
+                            return (
+                              <div key={t.week} className="space-y-0.5">
+                                <div className="flex justify-between text-xs">
+                                  <span className="w-24 truncate text-muted-foreground">{t.week}</span>
+                                  <div className="flex gap-3 text-[10px]">
+                                    {t.avgPrice != null && <span className="text-blue-400">Own: ${t.avgPrice}</span>}
+                                    {t.avgComp1Price != null && <span className="text-amber-400">C1: ${t.avgComp1Price}</span>}
+                                    {t.avgComp2Price != null && <span className="text-purple-400">C2: ${t.avgComp2Price}</span>}
+                                  </div>
+                                </div>
+                                <div className="flex gap-1 h-2">
+                                  {t.avgPrice != null && <div className="bg-blue-500/60 rounded" style={{ width: `${(t.avgPrice / maxPrice) * 100}px` }} />}
+                                  {t.avgComp1Price != null && <div className="bg-amber-500/60 rounded" style={{ width: `${(t.avgComp1Price / maxPrice) * 100}px` }} />}
+                                  {t.avgComp2Price != null && <div className="bg-purple-500/60 rounded" style={{ width: `${(t.avgComp2Price / maxPrice) * 100}px` }} />}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                        <div className="flex gap-4 mt-2 text-[9px] text-muted-foreground">
+                          <span className="flex items-center gap-1"><span className="w-2 h-2 bg-blue-500/60 rounded inline-block" />Own Price</span>
+                          <span className="flex items-center gap-1"><span className="w-2 h-2 bg-amber-500/60 rounded inline-block" />Comp1</span>
+                          <span className="flex items-center gap-1"><span className="w-2 h-2 bg-purple-500/60 rounded inline-block" />Comp2</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -983,7 +1067,7 @@ export default function OrionDataPage() {
                 {edaTab === "Data Risks" && (
                   <div className="space-y-4">
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <KpiCard label="Class Imbalance" value={`${activeEda.dataRisks?.classImbalance ?? 0}%`} color={(activeEda.dataRisks?.classImbalance ?? 0) > 30 ? "amber" : "green"} sub="positive class rate" />
+                      <KpiCard label="Low Variance Cols" value={activeEda.dataRisks?.lowVariance?.length ?? 0} color={(activeEda.dataRisks?.lowVariance?.length ?? 0) > 0 ? "amber" : "green"} />
                       <KpiCard label="Duplicates" value={activeEda.dataRisks?.duplicates ?? 0} color={(activeEda.dataRisks?.duplicates ?? 0) > 0 ? "red" : "green"} />
                       <KpiCard label="Fields w/ Nulls" value={activeEda.dataRisks?.nullRisks?.length ?? 0} color={(activeEda.dataRisks?.nullRisks?.length ?? 0) > 3 ? "amber" : "green"} />
                       <KpiCard label="Outlier Columns" value={activeEda.dataRisks?.outliers?.length ?? 0} color={(activeEda.dataRisks?.outliers?.length ?? 0) > 0 ? "amber" : "green"} />
@@ -1044,18 +1128,17 @@ export default function OrionDataPage() {
 
         {/* DATA QUALITY */}
         {activeTab === "quality" && (() => {
-          const numericCols = eda?.numericStats ? Object.entries(eda.numericStats as Record<string, any>) : [];
-          const catColsMap = eda?.catStats ? Object.entries(eda.catStats as Record<string, any>) : [];
+          const numericCols = activeEda?.numericStats ? Object.entries(activeEda.numericStats as Record<string, any>) : [];
+          const catColsMap = activeEda?.catStats ? Object.entries(activeEda.catStats as Record<string, any>) : [];
           const allColsLive = [
             ...numericCols.map(([col, s]) => ({ name: col, type: "numeric", nullCount: s.nullCount ?? 0, nullPercent: s.completeness != null ? (100 - s.completeness).toFixed(1) : "0.0", uniqueCount: s.uniqueCount ?? "—", completeness: s.completeness ?? 100, histogram: s.histogram })),
-            ...catColsMap.map(([col, s]) => ({ name: col, type: "categorical", nullCount: s.nullCount ?? 0, nullPercent: "—", uniqueCount: s.uniqueCount ?? "—", completeness: s.nullCount === 0 ? 100 : parseFloat((100 - (s.nullCount / (eda.overview?.totalCustomers || 500)) * 100).toFixed(1)), histogram: null })),
+            ...catColsMap.map(([col, s]) => ({ name: col, type: "categorical", nullCount: s.nullCount ?? 0, nullPercent: "—", uniqueCount: s.uniqueCount ?? "—", completeness: s.nullCount === 0 ? 100 : parseFloat((100 - (s.nullCount / (activeEda.overview?.totalCustomers || 500)) * 100).toFixed(1)), histogram: null })),
           ];
           const avgCompletenessLive = numericCols.length > 0
             ? Math.round(numericCols.reduce((a, [, s]) => a + (s.completeness ?? 100), 0) / numericCols.length)
             : 100;
           const totalNullsLive = numericCols.reduce((a, [, s]) => a + (s.nullCount ?? 0), 0) + catColsMap.reduce((a, [, s]) => a + (s.nullCount ?? 0), 0);
-          const risks = eda?.dataRisks ?? {};
-          const classImbalance = risks.classImbalance ?? {};
+          const risks = activeEda?.dataRisks ?? {};
           const outliers = risks.outliers ?? [];
           const nullRisks = risks.nullRisks ?? [];
           const duplicates = risks.duplicates ?? 0;
@@ -1111,7 +1194,7 @@ export default function OrionDataPage() {
                         <div className={`h-full rounded-full ${qualityScoreLive >= 90 ? "bg-green-500" : qualityScoreLive >= 70 ? "bg-amber-500" : "bg-red-500"}`} style={{ width: `${qualityScoreLive}%` }} />
                       </div>
                     </div>
-                    <KpiCard label="Total Records" value={(eda?.overview?.totalRows ?? 0).toLocaleString()} />
+                    <KpiCard label="Total Records" value={(activeEda?.overview?.totalRows ?? 0).toLocaleString()} />
                     <KpiCard label="Completeness" value={`${avgCompletenessLive}%`} color={avgCompletenessLive >= 95 ? "green" : "amber"} />
                     <KpiCard label="Missing Values" value={totalNullsLive.toLocaleString()} color={totalNullsLive === 0 ? "green" : "amber"} />
                     <KpiCard label="Duplicate Rows" value={duplicates} color={duplicates === 0 ? "green" : "red"} />
@@ -1123,8 +1206,8 @@ export default function OrionDataPage() {
                     <div className="bg-card border rounded-lg p-4 space-y-3">
                       <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5"><BarChart2 className="w-3.5 h-3.5" />Class Distribution</h4>
                       {(() => {
-                        const total = eda?.overview?.totalRows ?? 0;
-                        const churned = eda?.overview?.churnedRows ?? 0;
+                        const total = activeEda?.overview?.totalRows ?? 0;
+                        const churned = activeEda?.overview?.churnedRows ?? 0;
                         const retained = total - churned;
                         const churnPct = Math.round((churned / total) * 100);
                         const retainedPct = 100 - churnPct;
@@ -1447,9 +1530,8 @@ export default function OrionDataPage() {
                   key={id}
                   onClick={() => setFeatureSubTab(id)}
                   data-testid={`tab-feature-${id}`}
-                  className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium border-b-2 transition-colors ${
-                    featureSubTab === id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
-                  }`}
+                  className={`flex items-center gap-1.5 px-4 py-2 text-xs font-medium border-b-2 transition-colors ${featureSubTab === id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"
+                    }`}
                 >
                   <Icon className="w-3.5 h-3.5" />{label}
                   {id === "suggestions" && <span className="ml-1 px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-[9px] font-bold">{SUGGESTED_FEATURES.length}</span>}
@@ -1467,8 +1549,8 @@ export default function OrionDataPage() {
                     <Database className="w-4 h-4 text-primary" />
                     <div className="flex-1">
                       <Label className="text-xs font-medium">Select Dataset</Label>
-                      <Select 
-                        value={selectedFeatureDataset?.toString() || ""} 
+                      <Select
+                        value={selectedFeatureDataset?.toString() || ""}
                         onValueChange={(val) => {
                           setSelectedFeatureDataset(val ? parseInt(val) : null);
                           setSelectedFeatureModelId(null);
@@ -1564,66 +1646,65 @@ export default function OrionDataPage() {
 
                 {/* Feature List */}
                 {!featuresLoading && MODEL_FEATURES.length > 0 && (
-                <div className="bg-card border rounded-lg overflow-hidden">
-                  <div className="px-4 py-3 border-b flex items-center justify-between">
-                    <h4 className="text-xs font-semibold flex items-center gap-2">
-                      <Brain className="w-3.5 h-3.5 text-primary" />
-                      Model Features — Importance Scores
-                    </h4>
-                    <span className="text-[10px] text-muted-foreground">{MODEL_FEATURES.length} features</span>
-                  </div>
-                  <div className="p-4 space-y-2.5">
-                    {MODEL_FEATURES.map((f: any, i: number) => (
-                      <div key={f.name} className="group" data-testid={`feature-row-${f.name}`}>
-                        <div className="flex items-center gap-3">
-                          <span className="text-[10px] text-muted-foreground w-4 text-right">{i + 1}</span>
-                          <span className="font-mono text-[11px] text-blue-400 w-52 truncate">{f.name}</span>
-                          <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all"
-                              style={{
-                                width: `${Math.min(100, (toPositiveNumber(f.importance) / modelFeatureMaxImportance) * 100)}%`,
-                                background: "#3b82f6",
-                              }}
-                            />
-                          </div>
-                          <span className={`text-[9px] px-1.5 py-0.5 rounded border w-16 text-center ${
-                            f.type === "numeric" ? "border-blue-500/30 text-blue-400 bg-blue-500/10" :
-                            f.type === "categorical" ? "border-violet-500/30 text-violet-400 bg-violet-500/10" :
-                            "border-amber-500/30 text-amber-400 bg-amber-500/10"
-                          }`}>{f.type}</span>
-                        </div>
-                        <div className="ml-7 text-[10px] text-muted-foreground mt-0.5">{f.description}</div>
-                      </div>
-                    ))}
-                    {/* Staged (newly added) features */}
-                    {Array.from(stagedFeatures).map(sid => {
-                      const sug = SUGGESTED_FEATURES.find(s => s.id === sid);
-                      if (!sug) return null;
-                      return (
-                        <div key={sug.id} className="rounded border border-green-500/20 bg-green-500/5 px-3 py-2">
+                  <div className="bg-card border rounded-lg overflow-hidden">
+                    <div className="px-4 py-3 border-b flex items-center justify-between">
+                      <h4 className="text-xs font-semibold flex items-center gap-2">
+                        <Brain className="w-3.5 h-3.5 text-primary" />
+                        Model Features — Importance Scores
+                      </h4>
+                      <span className="text-[10px] text-muted-foreground">{MODEL_FEATURES.length} features</span>
+                    </div>
+                    <div className="p-4 space-y-2.5">
+                      {MODEL_FEATURES.map((f: any, i: number) => (
+                        <div key={f.name} className="group" data-testid={`feature-row-${f.name}`}>
                           <div className="flex items-center gap-3">
-                            <span className="text-[10px] text-green-400">★</span>
-                            <span className="font-mono text-[11px] text-green-400 w-52 truncate">{sug.name}</span>
+                            <span className="text-[10px] text-muted-foreground w-4 text-right">{i + 1}</span>
+                            <span className="font-mono text-[11px] text-blue-400 w-52 truncate">{f.name}</span>
                             <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
                               <div
-                                className="h-full rounded-full bg-blue-500"
-                                style={{ width: `${Math.min(100, (toPositiveNumber(sug.importanceGain) / suggestedFeatureMaxGain) * 100)}%` }}
+                                className="h-full rounded-full transition-all"
+                                style={{
+                                  width: `${Math.min(100, (toPositiveNumber(f.importance) / modelFeatureMaxImportance) * 100)}%`,
+                                  background: "#3b82f6",
+                                }}
                               />
                             </div>
-                            <span className="text-[9px] px-1.5 py-0.5 rounded border border-green-500/30 text-green-400 bg-green-500/10 w-16 text-center">staged</span>
-                            <Button size="icon" variant="ghost" className="h-5 w-5 hover:text-red-500"
-                              onClick={() => setStagedFeatures(prev => { const s = new Set(prev); s.delete(sug.id); return s; })}
-                              data-testid={`button-remove-staged-${sug.id}`}>
-                              <Trash2 className="w-3 h-3" />
-                            </Button>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded border w-16 text-center ${f.type === "numeric" ? "border-blue-500/30 text-blue-400 bg-blue-500/10" :
+                                f.type === "categorical" ? "border-violet-500/30 text-violet-400 bg-violet-500/10" :
+                                  "border-amber-500/30 text-amber-400 bg-amber-500/10"
+                              }`}>{f.type}</span>
                           </div>
-                          <div className="ml-7 text-[10px] text-muted-foreground mt-0.5 font-mono">{sug.formula}</div>
+                          <div className="ml-7 text-[10px] text-muted-foreground mt-0.5">{f.description}</div>
                         </div>
-                      );
-                    })}
+                      ))}
+                      {/* Staged (newly added) features */}
+                      {Array.from(stagedFeatures).map(sid => {
+                        const sug = SUGGESTED_FEATURES.find(s => s.id === sid);
+                        if (!sug) return null;
+                        return (
+                          <div key={sug.id} className="rounded border border-green-500/20 bg-green-500/5 px-3 py-2">
+                            <div className="flex items-center gap-3">
+                              <span className="text-[10px] text-green-400">★</span>
+                              <span className="font-mono text-[11px] text-green-400 w-52 truncate">{sug.name}</span>
+                              <div className="flex-1 h-3 bg-muted rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full bg-blue-500"
+                                  style={{ width: `${Math.min(100, (toPositiveNumber(sug.importanceGain) / suggestedFeatureMaxGain) * 100)}%` }}
+                                />
+                              </div>
+                              <span className="text-[9px] px-1.5 py-0.5 rounded border border-green-500/30 text-green-400 bg-green-500/10 w-16 text-center">staged</span>
+                              <Button size="icon" variant="ghost" className="h-5 w-5 hover:text-red-500"
+                                onClick={() => setStagedFeatures(prev => { const s = new Set(prev); s.delete(sug.id); return s; })}
+                                data-testid={`button-remove-staged-${sug.id}`}>
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            </div>
+                            <div className="ml-7 text-[10px] text-muted-foreground mt-0.5 font-mono">{sug.formula}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
                 )}
 
                 {/* Staged features notification */}
@@ -1698,11 +1779,10 @@ export default function OrionDataPage() {
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 mb-1.5">
                             <span className="font-mono text-sm text-primary">{sug.name}</span>
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded border ${
-                              sug.priority === "high" ? "border-red-500/30 text-red-400 bg-red-500/10" :
-                              sug.priority === "medium" ? "border-amber-500/30 text-amber-400 bg-amber-500/10" :
-                              "border-border text-muted-foreground"
-                            }`}>{sug.priority} priority</span>
+                            <span className={`text-[9px] px-1.5 py-0.5 rounded border ${sug.priority === "high" ? "border-red-500/30 text-red-400 bg-red-500/10" :
+                                sug.priority === "medium" ? "border-amber-500/30 text-amber-400 bg-amber-500/10" :
+                                  "border-border text-muted-foreground"
+                              }`}>{sug.priority} priority</span>
                             <span className="text-[9px] px-1.5 py-0.5 rounded border border-violet-500/30 text-violet-400 bg-violet-500/10">{sug.type}</span>
                           </div>
                           <div className="font-mono text-[10px] text-amber-400/80 mb-2 bg-black/20 px-2 py-1 rounded">{sug.formula}</div>
@@ -1722,7 +1802,7 @@ export default function OrionDataPage() {
                           </div>
                           <Button
                             size="sm"
-                            disabled={isSaved || saveSuggestedFeatureMut.isLoading}
+                            disabled={isSaved || saveSuggestedFeatureMut.isPending}
                             className={`text-xs h-7 mt-1 ${isStaged ? "bg-green-600/20 text-green-400 border border-green-500/30" : "bg-primary text-primary-foreground hover:bg-primary/90"}`}
                             onClick={() => {
                               if (isSaved) return;

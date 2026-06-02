@@ -45,44 +45,44 @@ const FEATURE_TYPE_OPTIONS: FeatureTypeOption[] = [
   {
     label: "Rolling Aggregation",
     value: "rolling",
-    description: "Compute avg/sum/min/max over a time window (e.g. 3-month rolling avg revenue).",
-    example: "avg(monthly_revenue, window=3mo)",
+    description: "Compute avg/sum/min/max over a time window (e.g. 4-week rolling avg sales).",
+    example: "avg(sales_units, window=4wk)",
   },
   {
     label: "Lag Feature",
     value: "lag",
     description: "Shift a metric backward N periods to capture temporal patterns.",
-    example: "lag(outage_count, periods=1)",
+    example: "lag(sales_units, periods=1)",
   },
   {
     label: "Trend Feature",
     value: "trend",
     description: "Calculate slope or direction of change over a window.",
-    example: "trend_slope(ticket_count, window=6mo)",
+    example: "trend_slope(sales_units, window=4wk)",
   },
   {
     label: "Ratio Feature",
     value: "ratio",
     description: "Divide two numeric columns to create a relative measure.",
-    example: "actual_speed / provisioned_speed",
+    example: "PROMO_SPENDS / net_sales_value",
   },
   {
     label: "Flag Feature",
     value: "flag",
     description: "Convert a threshold rule into a binary 0/1 indicator.",
-    example: "outage_count > 3 -> 1",
+    example: "PROMO_1 > 0 -> 1",
   },
   {
     label: "Segment Tag",
     value: "segment_tag",
-    description: "Assign customers into a rule-based segment flag.",
-    example: "tenure_months < 6 -> new_customer",
+    description: "Assign products/brands into a rule-based segment flag.",
+    example: "brand = 'X' -> 1",
   },
   {
     label: "Interaction Feature",
     value: "interaction",
     description: "Combine two columns to capture joint effects.",
-    example: "tenure_months x monthly_revenue",
+    example: "PROMO_SPENDS x sales_units",
   },
 ];
 
@@ -90,8 +90,8 @@ function createFeatureDraft(type: CustomFeatureDefinition["type"] = "rolling"): 
   return {
     name: "",
     type,
-    entityKey: "account_number",
-    timeColumn: "snapshot_month",
+    entityKey: "sku_id",
+    timeColumn: "week_id",
     sortDirection: "asc",
     sourceColumn: "",
     periods: "1",
@@ -144,8 +144,8 @@ function draftFromFeature(feature: CustomFeatureDefinition): FeatureDraft {
     id: feature.id,
     name: feature.name,
     type: feature.type,
-    entityKey: feature.entityKey || "account_number",
-    timeColumn: feature.timeColumn || "snapshot_month",
+    entityKey: feature.entityKey || "sku_id",
+    timeColumn: feature.timeColumn || "week_id",
     sortDirection: feature.sortDirection || "asc",
     sourceColumn: feature.sourceColumn || "",
     periods: feature.periods != null ? String(feature.periods) : "1",
@@ -187,7 +187,7 @@ function StatRow({ label, value }: { label: string; value: any }) {
   );
 }
 
-export default function OrionDataPage() {
+export default function BaselineOrionDataPage() {
   const qc = useQueryClient();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -212,14 +212,14 @@ export default function OrionDataPage() {
   const [dragOver, setDragOver] = useState(false);
   const [dbForm, setDbForm] = useState({ host: "", port: "5432", dbname: "", user: "", password: "" });
 
-  const { data: datasets = [] } = useQuery<Dataset[]>({ queryKey: ["/api/datasets"] });
+  const { data: datasets = [] } = useQuery<Dataset[]>({ queryKey: ["/api/cpg/promoUplift/datasets"] });
   const { data: eda, isLoading: edaLoading } = useQuery<any>({
-    queryKey: ["/api/orion/eda-live"],
+    queryKey: ["/api/cpg/promoUplift/orion/eda-live"],
     staleTime: 60000,
   });
 
   // Fetch feature importance from dataset's trained model (only when dataset is selected)
-  const { data: allModels = [] } = useQuery<any[]>({ queryKey: ["/api/models"] });
+  const { data: allModels = [] } = useQuery<any[]>({ queryKey: ["/api/cpg/promoUplift/models"] });
 
   // Models that were trained on the currently selected dataset
   const datasetsModels = selectedFeatureDataset
@@ -227,13 +227,13 @@ export default function OrionDataPage() {
     : [];
 
   const { data: modelFeatures, isLoading: featuresLoading } = useQuery<any>({
-    queryKey: ["/api/models/latest/features", selectedFeatureDataset, selectedFeatureModelId],
+    queryKey: ["/api/cpg/promoUplift/models/latest/features", selectedFeatureDataset, selectedFeatureModelId],
     queryFn: async () => {
       if (selectedFeatureDataset === null) return null;
       const params = selectedFeatureModelId
         ? `modelId=${selectedFeatureModelId}`
         : `datasetId=${selectedFeatureDataset}`;
-      const url = `/api/models/latest/features?${params}`;
+      const url = `/api/cpg/promoUplift/models/latest/features?${params}`;
       const res = await fetch(url);
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -247,11 +247,24 @@ export default function OrionDataPage() {
     features: CustomFeatureDefinition[];
     availableColumns: Array<{ name: string; type: string }>;
   }>({
-    queryKey: ["/api/datasets", selectedFeatureDataset, "custom-features"],
+    queryKey: ["/api/cpg/promoUplift/datasets", selectedFeatureDataset, "custom-features"],
     queryFn: async () => {
-      const res = await fetch(`/api/datasets/${selectedFeatureDataset}/custom-features`);
+      const res = await fetch(`/api/cpg/promoUplift/datasets/${selectedFeatureDataset}/custom-features`);
       if (!res.ok) throw new Error(await res.text());
-      return res.json();
+      const json = await res.json();
+      if (Array.isArray(json)) {
+        const dataset = datasets.find((ds) => ds.id === selectedFeatureDataset);
+        return {
+          datasetId: selectedFeatureDataset as number,
+          features: json,
+          availableColumns: ((dataset as any)?.columns || []) as Array<{ name: string; type: string }>,
+        };
+      }
+      return {
+        datasetId: json.datasetId ?? selectedFeatureDataset,
+        features: Array.isArray(json.features) ? json.features : [],
+        availableColumns: Array.isArray(json.availableColumns) ? json.availableColumns : [],
+      };
     },
     enabled: selectedFeatureDataset !== null,
     staleTime: 60000,
@@ -259,20 +272,35 @@ export default function OrionDataPage() {
 
   const builtFeatures = customFeatureState?.features || [];
   const builderColumns = customFeatureState?.availableColumns || [];
-  const hasAccountNumber = builderColumns.some(c => c.name === "account_number");
 
-  const { data: suggestedFeatures = [], isLoading: suggestionsLoading } = useQuery<any[]>({
-    queryKey: ["/api/datasets", selectedFeatureDataset, "feature-suggestions"],
+  const { data: groqStatus } = useQuery<{ hasKey: boolean }>({
+    queryKey: ["/api/cpg/promoUplift/datasets/groq-status"],
     queryFn: async () => {
-      if (selectedFeatureDataset === null) return [];
-      const res = await fetch(`/api/datasets/${selectedFeatureDataset}/feature-suggestions`);
+      const res = await fetch("/api/cpg/promoUplift/datasets/groq-status");
+      if (!res.ok) return { hasKey: false };
+      return res.json();
+    },
+    staleTime: 300000,
+  });
+
+  const { data: suggestionsPayload, isLoading: suggestionsLoading } = useQuery<{ suggestions: any[]; source: string }>({
+    queryKey: ["/api/cpg/promoUplift/datasets", selectedFeatureDataset, "feature-suggestions"],
+    queryFn: async () => {
+      if (selectedFeatureDataset === null) return { suggestions: [], source: "none" };
+      const res = await fetch(`/api/cpg/promoUplift/datasets/${selectedFeatureDataset}/feature-suggestions`);
       if (!res.ok) throw new Error(await res.text());
       const json = await res.json();
-      return Array.isArray(json.suggestions) ? json.suggestions : [];
+      return {
+        suggestions: Array.isArray(json.suggestions) ? json.suggestions : [],
+        source: json.source || "fallback",
+      };
     },
     enabled: selectedFeatureDataset !== null && featureSubTab === "suggestions",
     staleTime: 60000,
   });
+
+  const suggestedFeatures = suggestionsPayload?.suggestions ?? [];
+  const suggestionsSource = suggestionsPayload?.source ?? "none";
 
   const saveSuggestedFeatureMut = useMutation({
     mutationFn: async (suggestion: any) => {
@@ -281,12 +309,12 @@ export default function OrionDataPage() {
         ...suggestion,
         status: suggestion.status || "ready",
       };
-      const res = await apiRequest("POST", `/api/datasets/${selectedFeatureDataset}/custom-features`, body);
+      const res = await apiRequest("POST", `/api/cpg/promoUplift/datasets/${selectedFeatureDataset}/custom-features`, body);
       return res.json();
     },
     onSuccess: (data: any) => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets", selectedFeatureDataset, "custom-features"] });
-      qc.invalidateQueries({ queryKey: ["/api/datasets", selectedFeatureDataset, "feature-suggestions"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/datasets", selectedFeatureDataset, "custom-features"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/datasets", selectedFeatureDataset, "feature-suggestions"] });
       setStagedFeatures((prev) => new Set(prev).add(data.feature.id));
       toast({ title: "Feature added", description: `${data.feature.name} has been added to this dataset.` });
     },
@@ -299,10 +327,56 @@ export default function OrionDataPage() {
     setFeatureWarnings([]);
   }, [selectedFeatureDataset]);
 
+  // Auto-select first dataset when switching to suggestions tab
+  useEffect(() => {
+    if (featureSubTab === "suggestions" && selectedFeatureDataset === null && datasets.length > 0) {
+      setSelectedFeatureDataset(datasets[0].id);
+    }
+  }, [featureSubTab, datasets]);
+
+  // Live formula generation — updates as the user fills in fields
+  useEffect(() => {
+    const d = featureDraft;
+    const opMap: Record<string, string> = { gt: ">", gte: ">=", lt: "<", lte: "<=", eq: "=", ne: "!=" };
+    const intOpMap: Record<string, string> = { multiply: "×", divide: "÷", add: "+", subtract: "-" };
+    let formula = "";
+    switch (d.type) {
+      case "rolling":
+        if (d.sourceColumn && d.window && d.aggregation)
+          formula = `${d.aggregation}(${d.sourceColumn}, window=${d.window}, sort=${d.timeColumn || "week_id"} ${d.sortDirection})${d.entityKey ? ` by ${d.entityKey}` : ""}`;
+        break;
+      case "lag":
+        if (d.sourceColumn && d.periods)
+          formula = `lag(${d.sourceColumn}, periods=${d.periods}, sort=${d.timeColumn || "week_id"} ${d.sortDirection})`;
+        break;
+      case "trend":
+        if (d.sourceColumn && d.window)
+          formula = `trend_slope(${d.sourceColumn}, window=${d.window}, sort=${d.timeColumn || "week_id"} ${d.sortDirection})`;
+        break;
+      case "ratio":
+        if (d.numeratorColumn && d.denominatorColumn)
+          formula = `${d.numeratorColumn} / ${d.denominatorColumn}`;
+        break;
+      case "flag":
+        if (d.sourceColumn && d.compareValue !== "")
+          formula = `${d.sourceColumn} ${opMap[d.comparator] || d.comparator} ${d.compareValue} -> 1`;
+        break;
+      case "segment_tag":
+        if (d.sourceColumn && d.compareValue !== "")
+          formula = `${d.sourceColumn} ${opMap[d.comparator] || d.comparator} ${d.compareValue} -> tag`;
+        break;
+      case "interaction":
+        if (d.leftColumn && d.rightColumn)
+          formula = `${d.leftColumn} ${intOpMap[d.interactionOperator] || d.interactionOperator} ${d.rightColumn}`;
+        break;
+    }
+    setFeatureFormula(formula);
+  }, [featureDraft]);
+
   const previewFeatureMut = useMutation({
     mutationFn: async () => {
       if (selectedFeatureDataset === null) throw new Error("Select a dataset first");
-      const res = await apiRequest("POST", `/api/datasets/${selectedFeatureDataset}/custom-features/preview`, buildFeaturePayload(featureDraft));
+      const res = await apiRequest("POST", `/api/cpg/promoUplift/datasets/${selectedFeatureDataset}/custom-features/preview`, buildFeaturePayload(featureDraft));
       return res.json();
     },
     onSuccess: (data) => {
@@ -315,12 +389,12 @@ export default function OrionDataPage() {
   const saveFeatureMut = useMutation({
     mutationFn: async () => {
       if (selectedFeatureDataset === null) throw new Error("Select a dataset first");
-      const res = await apiRequest("POST", `/api/datasets/${selectedFeatureDataset}/custom-features`, buildFeaturePayload(featureDraft));
+      const res = await apiRequest("POST", `/api/cpg/promoUplift/datasets/${selectedFeatureDataset}/custom-features`, buildFeaturePayload(featureDraft));
       return res.json();
     },
     onSuccess: (data) => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets"] });
-      qc.invalidateQueries({ queryKey: ["/api/datasets", selectedFeatureDataset, "custom-features"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/datasets"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/datasets", selectedFeatureDataset, "custom-features"] });
       setFeatureDraft(createFeatureDraft(featureDraft.type));
       setFeatureFormula("");
       setFeaturePreview([]);
@@ -333,11 +407,11 @@ export default function OrionDataPage() {
   const deleteFeatureMut = useMutation({
     mutationFn: async (featureId: string) => {
       if (selectedFeatureDataset === null) throw new Error("Select a dataset first");
-      await apiRequest("DELETE", `/api/datasets/${selectedFeatureDataset}/custom-features/${featureId}`);
+      await apiRequest("DELETE", `/api/cpg/promoUplift/datasets/${selectedFeatureDataset}/custom-features/${featureId}`);
       return featureId;
     },
     onSuccess: (featureId) => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets", selectedFeatureDataset, "custom-features"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/datasets", selectedFeatureDataset, "custom-features"] });
       if (featureDraft.id === featureId) {
         setFeatureDraft(createFeatureDraft());
         setFeatureFormula("");
@@ -353,12 +427,12 @@ export default function OrionDataPage() {
       const fd = new FormData();
       fd.append("file", file);
       fd.append("name", uploadName || file.name.replace(".csv", ""));
-      const r = await fetch("/api/datasets/upload", { method: "POST", body: fd });
+      const r = await fetch("/api/cpg/promoUplift/datasets/upload", { method: "POST", body: fd });
       if (!r.ok) throw new Error(await r.text());
       return r.json();
     },
     onSuccess: (d) => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/datasets"] });
       setActiveTab("registry");
       toast({ title: "Dataset uploaded", description: `${d.rowCount.toLocaleString()} rows ingested` });
     },
@@ -366,9 +440,9 @@ export default function OrionDataPage() {
   });
 
   const deleteMut = useMutation({
-    mutationFn: (id: number) => apiRequest("DELETE", `/api/datasets/${id}`),
+    mutationFn: (id: number) => apiRequest("DELETE", `/api/cpg/promoUplift/datasets/${id}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/datasets"] });
       toast({ title: "Dataset deleted" });
       setDeleteTarget(null);
     },
@@ -376,9 +450,9 @@ export default function OrionDataPage() {
   });
 
   const edaMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/datasets/${id}/eda`, { targetColumn: "is_churned" }),
+    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/promoUplift/datasets/${id}/eda`, { targetColumn: "sales_units" }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/datasets"] });
+      qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/datasets"] });
       toast({ title: "EDA complete", description: "Analysis has been generated for this dataset." });
     },
     onError: (e: any) => toast({ title: "EDA failed", description: e.message, variant: "destructive" }),
@@ -436,7 +510,7 @@ export default function OrionDataPage() {
   return (
     <OrionLayout title="Data Hub" subtitle="Dataset registry, EDA, and Feature Engineering" isLoading={edaLoading}>
       <div className="space-y-4">
-        <OrionNav current="/orion/data" />
+        <OrionNav current="/cpg/promo-uplift/orion/data" basePath="/cpg/promo-uplift/orion" />
 
         <div className="flex gap-1 border-b">
           {(["ingest", "registry", "eda", "quality", "features"] as const).map(t => (
@@ -738,34 +812,58 @@ export default function OrionDataPage() {
                         </ul>
                       </div>
                     )}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      <KpiCard label={`Total ${sourceLabel}`} value={activeEda.overview.totalRows.toLocaleString()} color="blue" />
-                      <KpiCard label="Churned" value={activeEda.overview.churnedRows.toLocaleString()} color="red" sub={`${activeEda.overview.churnRate}% churn rate`} />
-                      <KpiCard label="Retained" value={activeEda.overview.retainedRows.toLocaleString()} color="green" />
-                      <KpiCard label="Features" value={activeEda.overview.features} sub={`${activeEda.overview.numericFeatures} numeric · ${activeEda.overview.categoricalFeatures} categorical`} />
-                    </div>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="bg-card border rounded-lg p-4">
-                        <h4 className="text-xs font-semibold mb-4 uppercase tracking-wider text-muted-foreground">Class Balance</h4>
-                        <div className="flex items-end gap-6 h-28 justify-center">
-                          {[
-                            { label: "Retained", value: activeEda.overview.retainedRows, color: "bg-emerald-500", total: activeEda.overview.totalRows },
-                            { label: "Churned", value: activeEda.overview.churnedRows, color: "bg-red-500", total: activeEda.overview.totalRows },
-                          ].map(b => {
-                            const pct = b.total > 0 ? b.value / b.total : 0;
-                            return (
-                              <div key={b.label} className="flex flex-col items-center gap-1 w-20">
-                                <span className="text-[10px] font-mono font-bold">{(pct * 100).toFixed(1)}%</span>
-                                <div className="w-full rounded overflow-hidden" style={{ height: `${Math.max(8, pct * 80)}px` }}>
-                                  <div className={`w-full h-full ${b.color} opacity-80`} />
-                                </div>
-                                <span className="text-[10px] text-muted-foreground">{b.label}</span>
-                              </div>
-                            );
-                          })}
+                    {activeEda.promoOverview ? (
+                      <>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <KpiCard label="Total Rows" value={(activeEda.promoOverview.totalRows ?? 0).toLocaleString()} color="blue" />
+                          <KpiCard label="Unique SKUs" value={activeEda.promoOverview.uniqueSkus ?? 0} color="purple" sub="distinct products" />
+                          <KpiCard label="Total Sales Units" value={(activeEda.promoOverview.totalSalesUnits ?? 0).toLocaleString()} color="green" />
+                          <KpiCard label="Promo Mechanics" value={activeEda.promoOverview.activeMechanics ?? 0} color="amber" sub="active in data" />
                         </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                          <KpiCard label="Unique Brands" value={activeEda.promoOverview.uniqueBrands ?? 0} color="blue" />
+                          <KpiCard label="Sales Channels" value={activeEda.promoOverview.uniqueChannels ?? 0} color="green" />
+                          <KpiCard label="Avg Promo Spend" value={activeEda.promoOverview.avgPromoSpend ?? 0} color="purple" sub="per row" />
+                          <KpiCard label="Features" value={activeEda.overview.features} sub={`${activeEda.overview.numericFeatures} numeric · ${activeEda.overview.categoricalFeatures} categorical`} />
+                        </div>
+                        {activeEda.promoOverview.dateRange && (
+                          <div className="bg-muted/40 border rounded-lg px-4 py-2 text-xs text-muted-foreground">
+                            <span className="font-semibold text-foreground mr-1">Date Range:</span>{activeEda.promoOverview.dateRange}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <KpiCard label={`Total ${sourceLabel}`} value={activeEda.overview.totalRows.toLocaleString()} color="blue" />
+                        <KpiCard label="Churned" value={activeEda.overview.churnedRows.toLocaleString()} color="red" sub={`${activeEda.overview.churnRate}% churn rate`} />
+                        <KpiCard label="Retained" value={activeEda.overview.retainedRows.toLocaleString()} color="green" />
+                        <KpiCard label="Features" value={activeEda.overview.features} sub={`${activeEda.overview.numericFeatures} numeric · ${activeEda.overview.categoricalFeatures} categorical`} />
                       </div>
-                      <div className="bg-card border rounded-lg p-4">
+                    )}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {!activeEda.promoOverview && (
+                        <div className="bg-card border rounded-lg p-4">
+                          <h4 className="text-xs font-semibold mb-4 uppercase tracking-wider text-muted-foreground">Class Balance</h4>
+                          <div className="flex items-end gap-6 h-28 justify-center">
+                            {[
+                              { label: "Retained", value: activeEda.overview.retainedRows, color: "bg-emerald-500", total: activeEda.overview.totalRows },
+                              { label: "Churned", value: activeEda.overview.churnedRows, color: "bg-red-500", total: activeEda.overview.totalRows },
+                            ].map(b => {
+                              const pct = b.total > 0 ? b.value / b.total : 0;
+                              return (
+                                <div key={b.label} className="flex flex-col items-center gap-1 w-20">
+                                  <span className="text-[10px] font-mono font-bold">{(pct * 100).toFixed(1)}%</span>
+                                  <div className="w-full rounded overflow-hidden" style={{ height: `${Math.max(8, pct * 80)}px` }}>
+                                    <div className={`w-full h-full ${b.color} opacity-80`} />
+                                  </div>
+                                  <span className="text-[10px] text-muted-foreground">{b.label}</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                      <div className={`bg-card border rounded-lg p-4${activeEda.promoOverview ? " md:col-span-2" : ""}`}>
                         <h4 className="text-xs font-semibold mb-3 uppercase tracking-wider text-muted-foreground">Completeness by Field</h4>
                         <div className="space-y-2">
                           {Object.entries(activeEda.numericStats || {}).slice(0, 7).map(([col, s]: [string, any]) => (
@@ -800,10 +898,12 @@ export default function OrionDataPage() {
                             <StatRow label="Min / Max" value={`${selectedNum.min} / ${selectedNum.max}`} />
                             <StatRow label="Q1 / Q3" value={`${selectedNum.q1} / ${selectedNum.q3}`} />
                             <StatRow label="Missing" value={`${selectedNum.nullCount ?? 0} (${(100 - (selectedNum.completeness ?? 100)).toFixed(1)}%)`} />
-                            <div className="pt-1 mt-1 border-t border-border/30">
-                              <StatRow label="Churn cohort avg" value={selectedNum.churnMean} />
-                              <StatRow label="Retained cohort avg" value={selectedNum.retainedMean} />
-                            </div>
+                            {(selectedNum.churnMean != null || selectedNum.retainedMean != null) && (
+                              <div className="pt-1 mt-1 border-t border-border/30">
+                                <StatRow label="Churn cohort avg" value={selectedNum.churnMean ?? "—"} />
+                                <StatRow label="Retained cohort avg" value={selectedNum.retainedMean ?? "—"} />
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
@@ -840,115 +940,239 @@ export default function OrionDataPage() {
 
                 {edaTab === "Bivariate" && (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="bg-card border rounded-lg p-4">
-                      <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Churn Rate by Credit Profile</h4>
-                      <div className="space-y-3">
-                        {(activeEda.bivariate?.riskCategory || []).map((item: any, idx: number) => {
-                          const colors = ["bg-red-500", "bg-amber-500", "bg-blue-500", "bg-purple-500", "bg-emerald-500"];
-                          return (
-                            <div key={item.label} className="space-y-1">
-                              <div className="flex justify-between text-xs">
-                                <span className="capitalize font-medium">{item.label}</span>
-                                <span className="font-mono text-red-400">{item.churnRate}% churn</span>
-                              </div>
-                              <div className="h-3 bg-muted rounded overflow-hidden">
-                                <div className={`h-full rounded ${colors[idx % colors.length]}`}
-                                  style={{ width: `${Math.min(item.churnRate, 100)}%` }} />
-                              </div>
-                              <span className="text-[9px] text-muted-foreground">{item.total.toLocaleString()} customers · {item.churned} churned</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    <div className="bg-card border rounded-lg p-4">
-                      <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Avg Monthly Revenue by Loyalty Status</h4>
-                      <p className="text-[10px] text-muted-foreground mb-3">bill_amount summed / snapshot months per account</p>
-                      <div className="space-y-3">
-                        {(activeEda.bivariate?.valueTier || []).filter((item: any) => item.total > 0).map((item: any) => {
-                          const maxRev = Math.max(...(activeEda.bivariate?.valueTier || []).map((x: any) => x.avgRevenue || 0), 1);
-                          return (
-                            <div key={item.label} className="space-y-1">
-                              <div className="flex justify-between text-xs">
-                                <span className="capitalize font-medium">{item.label}</span>
-                                <span className="font-mono text-blue-400">${item.avgRevenue}/mo</span>
-                              </div>
-                              <div className="h-3 bg-muted rounded overflow-hidden">
-                                <div className="h-full bg-blue-500 rounded" style={{ width: `${(item.avgRevenue / maxRev) * 100}%` }} />
-                              </div>
-                              <span className="text-[9px] text-muted-foreground">{item.count.toLocaleString()} customers</span>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    {activeEda.brandSales?.length > 0 ? (
+                      <>
+                        <div className="bg-card border rounded-lg p-4">
+                          <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Sales Units by Brand</h4>
+                          <div className="space-y-2">
+                            {(activeEda.brandSales || []).slice(0, 10).map((item: any) => {
+                              const maxU = Math.max(...(activeEda.brandSales || []).map((x: any) => x.totalUnits), 1);
+                              return (
+                                <div key={item.label} className="space-y-0.5">
+                                  <div className="flex justify-between text-xs">
+                                    <span className="font-medium truncate max-w-[140px]">{item.label}</span>
+                                    <span className="font-mono text-blue-400">{(item.totalUnits ?? 0).toLocaleString()} units</span>
+                                  </div>
+                                  <div className="h-2.5 bg-muted rounded overflow-hidden">
+                                    <div className="h-full bg-blue-500 rounded" style={{ width: `${((item.totalUnits ?? 0) / maxU) * 100}%` }} />
+                                  </div>
+                                  <span className="text-[9px] text-muted-foreground">{(item.rows ?? 0).toLocaleString()} rows · avg {item.avgUnits} units/row</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="bg-card border rounded-lg p-4">
+                          <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Promo Mechanic Activity</h4>
+                          <div className="space-y-2">
+                            {(activeEda.promoActivity || []).map((item: any) => {
+                              const maxR = Math.max(...(activeEda.promoActivity || []).map((x: any) => x.activeRows), 1);
+                              return (
+                                <div key={item.mechanic} className="space-y-0.5">
+                                  <div className="flex justify-between text-xs">
+                                    <span className="font-medium">{item.mechanic}</span>
+                                    <span className={`font-mono text-[10px] ${(item.uplift ?? 0) >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                                      {(item.uplift ?? 0) >= 0 ? "+" : ""}{item.uplift ?? 0} units uplift
+                                    </span>
+                                  </div>
+                                  <div className="h-2.5 bg-muted rounded overflow-hidden">
+                                    <div className="h-full bg-amber-500 rounded" style={{ width: `${((item.activeRows ?? 0) / maxR) * 100}%` }} />
+                                  </div>
+                                  <span className="text-[9px] text-muted-foreground">{(item.activeRows ?? 0).toLocaleString()} active rows · on: {item.avgUnitsOn ?? "—"} / off: {item.avgUnitsOff ?? "—"}</span>
+                                </div>
+                              );
+                            })}
+                            {(activeEda.promoActivity || []).length === 0 && (
+                              <p className="text-xs text-muted-foreground">No active promo mechanics detected.</p>
+                            )}
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="bg-card border rounded-lg p-4">
+                          <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Churn Rate by Credit Profile</h4>
+                          <div className="space-y-3">
+                            {(activeEda.bivariate?.riskCategory || []).map((item: any, idx: number) => {
+                              const colors = ["bg-red-500", "bg-amber-500", "bg-blue-500", "bg-purple-500", "bg-emerald-500"];
+                              return (
+                                <div key={item.label} className="space-y-1">
+                                  <div className="flex justify-between text-xs">
+                                    <span className="capitalize font-medium">{item.label}</span>
+                                    <span className="font-mono text-red-400">{item.churnRate}% churn</span>
+                                  </div>
+                                  <div className="h-3 bg-muted rounded overflow-hidden">
+                                    <div className={`h-full rounded ${colors[idx % colors.length]}`} style={{ width: `${Math.min(item.churnRate, 100)}%` }} />
+                                  </div>
+                                  <span className="text-[9px] text-muted-foreground">{item.total.toLocaleString()} customers · {item.churned} churned</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="bg-card border rounded-lg p-4">
+                          <h4 className="text-xs font-semibold mb-3 text-muted-foreground uppercase">Avg Monthly Revenue by Loyalty Status</h4>
+                          <p className="text-[10px] text-muted-foreground mb-3">bill_amount summed / snapshot months per account</p>
+                          <div className="space-y-3">
+                            {(activeEda.bivariate?.valueTier || []).filter((item: any) => item.total > 0).map((item: any) => {
+                              const maxRev = Math.max(...(activeEda.bivariate?.valueTier || []).map((x: any) => x.avgRevenue || 0), 1);
+                              return (
+                                <div key={item.label} className="space-y-1">
+                                  <div className="flex justify-between text-xs">
+                                    <span className="capitalize font-medium">{item.label}</span>
+                                    <span className="font-mono text-blue-400">${item.avgRevenue}/mo</span>
+                                  </div>
+                                  <div className="h-3 bg-muted rounded overflow-hidden">
+                                    <div className="h-full bg-blue-500 rounded" style={{ width: `${(item.avgRevenue / maxRev) * 100}%` }} />
+                                  </div>
+                                  <span className="text-[9px] text-muted-foreground">{item.count.toLocaleString()} customers</span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
                 {edaTab === "Multivariate" && (
                   <div className="bg-card border rounded-lg overflow-hidden">
-                    <div className="px-4 py-3 border-b">
-                      <h4 className="text-xs font-semibold">Churn Rate by Loyalty Status</h4>
-                      <p className="text-[10px] text-muted-foreground mt-0.5">Avg Revenue = sum(bill_amount) / snapshot months per account</p>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead>
-                          <tr className="border-b bg-muted/30">
-                            {["Loyalty Status", "Customers", "Churned", "Churn Rate", "Avg Monthly Revenue", "Risk Bar"].map(h => (
-                              <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(activeEda.multivariate || []).map((g: any, i: number) => (
-                            <tr key={i} className="border-b hover:bg-muted/10">
-                              <td className="px-3 py-2 capitalize font-medium">{g.valueTier}</td>
-                              <td className="px-3 py-2 font-mono">{g.total.toLocaleString()}</td>
-                              <td className="px-3 py-2 font-mono text-red-400">{g.churned.toLocaleString()}</td>
-                              <td className="px-3 py-2 font-mono font-bold" style={{ color: g.churnRate > 30 ? "#ef4444" : g.churnRate > 15 ? "#f59e0b" : "#10b981" }}>
-                                {g.churnRate}%
-                              </td>
-                              <td className="px-3 py-2 font-mono">${g.avgRevenue}</td>
-                              <td className="px-3 py-2 w-24">
-                                <div className="h-2 bg-muted rounded overflow-hidden">
-                                  <div className="h-full rounded" style={{ width: `${Math.min(g.churnRate, 100)}%`, backgroundColor: g.churnRate > 30 ? "#ef4444" : g.churnRate > 15 ? "#f59e0b" : "#10b981" }} />
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                    {activeEda.promoMultivariate?.length > 0 ? (
+                      <>
+                        <div className="px-4 py-3 border-b">
+                          <h4 className="text-xs font-semibold">Sales Units by Brand × Channel</h4>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Total and average sales units per brand-channel combination</p>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b bg-muted/30">
+                                {["Brand", "Channel", "Total Units", "Avg Units/Row", "Rows", "Volume Bar"].map(h => (
+                                  <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(activeEda.promoMultivariate || []).map((g: any, i: number) => {
+                                const maxU = Math.max(...(activeEda.promoMultivariate || []).map((x: any) => x.totalUnits), 1);
+                                return (
+                                  <tr key={i} className="border-b hover:bg-muted/10">
+                                    <td className="px-3 py-2 font-medium">{g.brand}</td>
+                                    <td className="px-3 py-2 text-muted-foreground">{g.channel}</td>
+                                    <td className="px-3 py-2 font-mono text-blue-400">{(g.totalUnits ?? 0).toLocaleString()}</td>
+                                    <td className="px-3 py-2 font-mono">{g.avgUnits ?? 0}</td>
+                                    <td className="px-3 py-2 font-mono text-muted-foreground">{(g.rows ?? 0).toLocaleString()}</td>
+                                    <td className="px-3 py-2 w-24">
+                                      <div className="h-2 bg-muted rounded overflow-hidden">
+                                        <div className="h-full bg-blue-500 rounded" style={{ width: `${((g.totalUnits ?? 0) / maxU) * 100}%` }} />
+                                      </div>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="px-4 py-3 border-b">
+                          <h4 className="text-xs font-semibold">Churn Rate by Loyalty Status</h4>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Avg Revenue = sum(bill_amount) / snapshot months per account</p>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-xs">
+                            <thead>
+                              <tr className="border-b bg-muted/30">
+                                {["Loyalty Status", "Customers", "Churned", "Churn Rate", "Avg Monthly Revenue", "Risk Bar"].map(h => (
+                                  <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>
+                                ))}
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {(activeEda.multivariate || []).map((g: any, i: number) => (
+                                <tr key={i} className="border-b hover:bg-muted/10">
+                                  <td className="px-3 py-2 capitalize font-medium">{g.valueTier}</td>
+                                  <td className="px-3 py-2 font-mono">{g.total.toLocaleString()}</td>
+                                  <td className="px-3 py-2 font-mono text-red-400">{g.churned.toLocaleString()}</td>
+                                  <td className="px-3 py-2 font-mono font-bold" style={{ color: g.churnRate > 30 ? "#ef4444" : g.churnRate > 15 ? "#f59e0b" : "#10b981" }}>
+                                    {g.churnRate}%
+                                  </td>
+                                  <td className="px-3 py-2 font-mono">${g.avgRevenue}</td>
+                                  <td className="px-3 py-2 w-24">
+                                    <div className="h-2 bg-muted rounded overflow-hidden">
+                                      <div className="h-full rounded" style={{ width: `${Math.min(g.churnRate, 100)}%`, backgroundColor: g.churnRate > 30 ? "#ef4444" : g.churnRate > 15 ? "#f59e0b" : "#10b981" }} />
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </>
+                    )}
                   </div>
                 )}
 
                 {edaTab === "Time Trends" && (
                   <div className="bg-card border rounded-lg p-4">
-                    <h4 className="text-xs font-semibold mb-4 text-muted-foreground uppercase">Churn {"&"} Revenue by Tenure Cohort</h4>
-                    <div className="space-y-4">
-                      {(activeEda.timeTrends || []).map((t: any) => (
-                        <div key={t.bucket} className="space-y-1">
-                          <div className="flex justify-between text-xs">
-                            <span className="font-medium">{t.bucket}</span>
-                            <div className="flex gap-4 text-[10px] text-muted-foreground">
-                              <span>{t.total.toLocaleString()} customers</span>
-                              <span className="text-red-400">{t.churned} churned ({t.churnRate}%)</span>
-                              <span className="text-blue-400">${t.avgRevenue}/mo avg</span>
-                            </div>
-                          </div>
-                          <div className="flex gap-px h-5 rounded overflow-hidden">
-                            {t.total > 0 && (
-                              <>
-                                <div className="bg-emerald-500/50" style={{ flex: t.total - t.churned }} />
-                                <div className="bg-red-500/70" style={{ flex: t.churned }} />
-                              </>
-                            )}
-                          </div>
+                    {activeEda.promoTimeTrends?.length > 0 ? (
+                      <>
+                        <h4 className="text-xs font-semibold mb-4 text-muted-foreground uppercase">Monthly Sales Units Trend</h4>
+                        <div className="space-y-3">
+                          {(activeEda.promoTimeTrends || []).map((t: any) => {
+                            const maxU = Math.max(...(activeEda.promoTimeTrends || []).map((x: any) => x.totalUnits), 1);
+                            const monthNames = ["", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+                            const mIdx = parseInt(t.period, 10);
+                            const mLabel = mIdx >= 1 && mIdx <= 12 ? monthNames[mIdx] : t.period;
+                            return (
+                              <div key={t.period} className="space-y-1">
+                                <div className="flex justify-between text-xs">
+                                  <span className="font-medium w-10">{mLabel}</span>
+                                  <div className="flex gap-4 text-[10px] text-muted-foreground">
+                                    <span className="text-blue-400 font-mono">{(t.totalUnits ?? 0).toLocaleString()} units total</span>
+                                    <span>avg {t.avgUnits ?? 0} / row</span>
+                                    <span>{(t.rows ?? 0).toLocaleString()} rows</span>
+                                  </div>
+                                </div>
+                                <div className="h-4 bg-muted rounded overflow-hidden">
+                                  <div className="h-full bg-blue-500/70 rounded" style={{ width: `${((t.totalUnits ?? 0) / maxU) * 100}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                      ))}
-                    </div>
-                    <p className="text-[9px] text-muted-foreground mt-3">Green = retained · Red = churned (proportional width)</p>
+                        <p className="text-[9px] text-muted-foreground mt-3">Bar width proportional to total sales units per month</p>
+                      </>
+                    ) : (
+                      <>
+                        <h4 className="text-xs font-semibold mb-4 text-muted-foreground uppercase">Churn {"&"} Revenue by Tenure Cohort</h4>
+                        <div className="space-y-4">
+                          {(activeEda.timeTrends || []).map((t: any) => (
+                            <div key={t.bucket} className="space-y-1">
+                              <div className="flex justify-between text-xs">
+                                <span className="font-medium">{t.bucket}</span>
+                                <div className="flex gap-4 text-[10px] text-muted-foreground">
+                                  <span>{t.total.toLocaleString()} customers</span>
+                                  <span className="text-red-400">{t.churned} churned ({t.churnRate}%)</span>
+                                  <span className="text-blue-400">${t.avgRevenue}/mo avg</span>
+                                </div>
+                              </div>
+                              <div className="flex gap-px h-5 rounded overflow-hidden">
+                                {t.total > 0 && (
+                                  <>
+                                    <div className="bg-emerald-500/50" style={{ flex: t.total - t.churned }} />
+                                    <div className="bg-red-500/70" style={{ flex: t.churned }} />
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-[9px] text-muted-foreground mt-3">Green = retained · Red = churned (proportional width)</p>
+                      </>
+                    )}
                   </div>
                 )}
 
@@ -1666,10 +1890,39 @@ export default function OrionDataPage() {
                         </SelectContent>
                       </Select>
                     </div>
+                    {selectedFeatureDataset !== null && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 text-xs mt-4 flex-shrink-0"
+                        disabled={suggestionsLoading}
+                        onClick={() => {
+                          qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/datasets", selectedFeatureDataset, "feature-suggestions"] });
+                        }}
+                      >
+                        {suggestionsLoading ? "Generating..." : "Regenerate"}
+                      </Button>
+                    )}
                   </div>
-                  <p className="text-[10px] text-muted-foreground">
-                    Generate suggested features using the selected dataset and the Groq model key.
-                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    {groqStatus?.hasKey ? (
+                      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-green-500/30 bg-green-500/10 text-green-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
+                        Groq API key configured — AI-powered suggestions active
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full border border-amber-500/30 bg-amber-500/10 text-amber-400">
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 inline-block" />
+                        No Groq API key — showing rule-based suggestions. Add GROQ_API_KEY to backend/.env to enable AI.
+                      </span>
+                    )}
+                    {suggestionsSource === "llm" && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full border border-violet-500/30 bg-violet-500/10 text-violet-400">Groq AI</span>
+                    )}
+                    {suggestionsSource === "fallback" && (
+                      <span className="text-[10px] px-2 py-0.5 rounded-full border border-border bg-muted text-muted-foreground">Rule-based</span>
+                    )}
+                  </div>
                 </div>
                 <div className="flex items-center gap-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
                   <Sparkles className="w-4 h-4 text-amber-400 flex-shrink-0" />
@@ -1869,13 +2122,16 @@ export default function OrionDataPage() {
                       </div>
 
                       <div className="space-y-1.5">
-                        <Label className="text-[11px]">Feature Name</Label>
+                        <Label className="text-[11px]">Feature Name <span className="text-red-500">*</span></Label>
                         <Input
                           value={featureDraft.name}
                           onChange={(e) => setFeatureDraft(prev => ({ ...prev, name: e.target.value }))}
                           placeholder="e.g. revenue_rollmean_3"
-                          className="h-8 text-xs font-mono"
+                          className={`h-8 text-xs font-mono ${!featureDraft.name.trim() ? "border-red-500/50 focus-visible:ring-red-500/30" : ""}`}
                         />
+                        {!featureDraft.name.trim() && (
+                          <p className="text-[10px] text-red-400">Feature name is required before saving.</p>
+                        )}
                       </div>
 
                       {["rolling", "lag", "trend"].includes(featureDraft.type) && (
@@ -1883,20 +2139,14 @@ export default function OrionDataPage() {
                           <div className="grid grid-cols-2 gap-3">
                             <div className="space-y-1.5">
                               <Label className="text-[11px]">Entity Key</Label>
-                              {hasAccountNumber ? (
-                                <div className="h-8 px-3 flex items-center text-xs bg-muted/50 border rounded text-muted-foreground font-mono">
-                                  account_number <span className="ml-1.5 text-[9px] bg-primary/10 text-primary px-1 py-0.5 rounded">auto</span>
-                                </div>
-                              ) : (
-                                <Select value={featureDraft.entityKey} onValueChange={(val) => setFeatureDraft(prev => ({ ...prev, entityKey: val }))}>
-                                  <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select entity key" /></SelectTrigger>
-                                  <SelectContent>
-                                    {builderColumns.map((column) => (
-                                      <SelectItem key={`entity-${column.name}`} value={column.name}>{column.name}</SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                              )}
+                              <Select value={featureDraft.entityKey} onValueChange={(val) => setFeatureDraft(prev => ({ ...prev, entityKey: val }))}>
+                                <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select entity key" /></SelectTrigger>
+                                <SelectContent>
+                                  {builderColumns.map((column) => (
+                                    <SelectItem key={`entity-${column.name}`} value={column.name}>{column.name}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
                             </div>
                             <div className="space-y-1.5">
                               <Label className="text-[11px]">Time Column</Label>
@@ -2084,7 +2334,7 @@ export default function OrionDataPage() {
                         <Button size="sm" variant="outline" className="text-xs h-8" onClick={() => previewFeatureMut.mutate()} disabled={selectedFeatureDataset === null || previewFeatureMut.isPending}>
                           Preview
                         </Button>
-                        <Button size="sm" className="text-xs h-8" onClick={() => saveFeatureMut.mutate()} disabled={selectedFeatureDataset === null || saveFeatureMut.isPending}>
+                        <Button size="sm" className="text-xs h-8" onClick={() => saveFeatureMut.mutate()} disabled={selectedFeatureDataset === null || saveFeatureMut.isPending || !featureDraft.name.trim()}>
                           {featureDraft.id ? "Update Feature" : "Save Feature"}
                         </Button>
                       </div>

@@ -1,269 +1,303 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { OrionLayout, KpiCard, StatusBadge, OrionNav } from "@/components/orion-layout";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, CartesianGrid } from "recharts";
-import { apiRequest } from "@/lib/queryClient";
-import { useToast } from "@/hooks/use-toast";
-import { useState } from "react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell, CartesianGrid, ReferenceLine, PieChart, Pie } from "recharts";
 
-const OUTCOME_COLORS = { retained: "#22c55e", churned: "#ef4444", downgraded: "#f59e0b", pending: "#94a3b8" };
+const API_BASE = "/api/cpg/price_elasticity";
+const CPG_BASE = "/cpg/price-elasticity/orion";
+
+const MODEL_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899", "#84cc16"];
+
+type ModelType = {
+  id: number;
+  name: string;
+  algorithm: string;
+  status: string;
+  isDeployed: boolean;
+  trainedAt: string;
+  rowCount?: number;
+  r2?: number;
+  modelWeights?: {
+    globalPriceElasticity?: number;
+    modelConverged?: boolean;
+    elasticitySummary?: { name: string; elasticity: number }[];
+    rowsProcessed?: number;
+  };
+};
 
 export default function OrionOutcomes() {
-  const qc = useQueryClient();
-  const { toast } = useToast();
-  const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
-
-  // Same data as Retention Action Center — single source of truth
-  const { data: retention, isLoading } = useQuery<any>({ queryKey: ["/api/analytics/retention"] });
-  const { data: models = [] } = useQuery<any[]>({
-    queryKey: ["/api/models"],
-    onSuccess: (data: any[]) => {
-      // Auto-select the latest model when models load
-      if (data.length > 0 && selectedModelId === null) {
-        const latest = [...data].sort((a, b) => new Date(b.trainedAt).getTime() - new Date(a.trainedAt).getTime())[0];
-        setSelectedModelId(latest.id);
-      }
-    },
-  } as any);
-
-  // Derive the latest model ID for default selection
-  const latestModelId = (models as any[]).length > 0
-    ? [...(models as any[])].sort((a, b) => new Date(b.trainedAt).getTime() - new Date(a.trainedAt).getTime())[0].id
-    : null;
-  const activeModelId = selectedModelId ?? latestModelId;
-
-  const predQueryKey = activeModelId
-    ? [`/api/predictions`, { modelId: activeModelId }]
-    : ["/api/predictions"];
-
-  const { data: allPreds = [] } = useQuery<any[]>({
-    queryKey: predQueryKey,
-    queryFn: () => activeModelId
-      ? fetch(`/api/predictions?modelId=${activeModelId}`).then(r => r.json())
-      : fetch("/api/predictions").then(r => r.json()),
+  const { data: models = [], isLoading } = useQuery<ModelType[]>({
+    queryKey: [`${API_BASE}/models`],
   });
 
-  const updateRecMut = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => apiRequest("PATCH", `/api/recommendations/${id}`, data),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/analytics/retention"] }); toast({ title: "Updated" }); },
+  const allModels = models as ModelType[];
+  const sortedModels = [...allModels].sort(
+    (a, b) => new Date(b.trainedAt || 0).getTime() - new Date(a.trainedAt || 0).getTime()
+  );
+  const deployedModel = allModels.find(m => m.isDeployed) ?? null;
+
+  const brandData = deployedModel?.modelWeights?.elasticitySummary
+    ? [...deployedModel.modelWeights.elasticitySummary].sort((a, b) => a.elasticity - b.elasticity)
+    : [];
+
+  const highlyElastic = brandData.filter(b => b.elasticity < -1);
+  const inelastic = brandData.filter(b => b.elasticity >= -1 && b.elasticity < 0);
+  const positive = brandData.filter(b => b.elasticity >= 0);
+
+  const globalElas = deployedModel?.modelWeights?.globalPriceElasticity ?? deployedModel?.r2 ?? null;
+
+  const pieData = [
+    { name: "Highly Elastic", value: highlyElastic.length, fill: "#ef4444" },
+    { name: "Inelastic", value: inelastic.length, fill: "#3b82f6" },
+    { name: "Positive", value: positive.length, fill: "#10b981" },
+  ].filter(d => d.value > 0);
+
+  const last8 = [...allModels]
+    .sort((a, b) => new Date(a.trainedAt).getTime() - new Date(b.trainedAt).getTime())
+    .slice(-8);
+  const comparisonData = last8.map((m, i) => ({
+    label: m.name?.split(" ").slice(-2).join(" ") || `#${m.id}`,
+    elasticity:
+      m.modelWeights?.globalPriceElasticity != null
+        ? Number(m.modelWeights.globalPriceElasticity)
+        : m.r2 != null ? Number(m.r2) : 0,
+    fill: MODEL_COLORS[i % MODEL_COLORS.length],
+  }));
+
+  const algoMap: Record<string, { count: number; elasSum: number; rowsSum: number }> = {};
+  allModels.forEach(m => {
+    const algo = m.algorithm || "Mixed LM";
+    if (!algoMap[algo]) algoMap[algo] = { count: 0, elasSum: 0, rowsSum: 0 };
+    const elas = m.modelWeights?.globalPriceElasticity ?? m.r2 ?? 0;
+    algoMap[algo].count += 1;
+    algoMap[algo].elasSum += Number(elas);
+    algoMap[algo].rowsSum += m.rowCount ?? m.modelWeights?.rowsProcessed ?? 0;
   });
-
-  const tracker = retention?.tracker || {};
-  const recs = retention?.recommendedActions || [];
-  const queue = retention?.queue || { pending: [], inProgress: [], completed: [], declined: [] };
-
-  // Outcome breakdown
-  const completed = queue.completed || [];
-  const outcomeCounts = { retained: 0, churned: 0, downgraded: 0 };
-  completed.forEach((r: any) => { if (r.outcome && outcomeCounts.hasOwnProperty(r.outcome)) (outcomeCounts as any)[r.outcome]++; });
-  const outcomePie = Object.entries(outcomeCounts).filter(([, v]) => v > 0).map(([k, v]) => ({ name: k.charAt(0).toUpperCase() + k.slice(1), value: v, color: (OUTCOME_COLORS as any)[k] }));
-
-  // Action type breakdown
-  const actionTypeCounts: Record<string, { total: number; saved: number }> = {};
-  recs.forEach((r: any) => {
-    const t = r.actionType || "Unknown";
-    if (!actionTypeCounts[t]) actionTypeCounts[t] = { total: 0, saved: 0 };
-    actionTypeCounts[t].total++;
-    if (r.outcome === "retained") actionTypeCounts[t].saved++;
-  });
-  const actionData = Object.entries(actionTypeCounts).map(([name, d]) => ({
-    name, total: d.total, saved: d.saved, rate: d.total > 0 ? parseFloat(((d.saved / d.total) * 100).toFixed(1)) : 0,
-  })).sort((a, b) => b.total - a.total).slice(0, 8);
-
-  // Revenue impact by month (from completed recs that have executedAt)
-  const monthlyRevenue: Record<string, number> = {};
-  completed.forEach((r: any) => {
-    if (r.executedAt && r.outcome === "retained" && r.estimatedImpact) {
-      const m = new Date(r.executedAt).toISOString().slice(0, 7);
-      monthlyRevenue[m] = (monthlyRevenue[m] || 0) + r.estimatedImpact;
-    }
-  });
-  const revenueTimeline = Object.entries(monthlyRevenue).sort().map(([month, revenue]) => ({ month, revenue: Math.round(revenue) }));
-
-  // Unique account counts per dataset — used as denominator for % of Total in Model Attribution
-  const { data: datasetAccountCounts = {} } = useQuery<Record<number, number>>({
-    queryKey: ["/api/datasets/unique-account-counts"],
-  });
-
-  // Model attribution
-  const predByModel: Record<number, number> = {};
-  (allPreds as any[]).forEach((p: any) => { predByModel[p.modelId] = (predByModel[p.modelId] || 0) + 1; });
+  const algoSummary = Object.entries(algoMap).map(([algo, d]) => ({
+    algo,
+    avgElasticity: d.count > 0 ? d.elasSum / d.count : 0,
+    avgRows: d.count > 0 ? Math.round(d.rowsSum / d.count) : 0,
+    runs: d.count,
+  }));
 
   return (
-    <OrionLayout title="Outcomes & Recommendations" subtitle="Retention action results — same data as Retention Action Center" isLoading={isLoading}>
-      <div className="mb-4"><OrionNav current="/tmt/customer-churn/orion/outcomes" /></div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <KpiCard label="Actions Triggered" value={tracker.actionsTriggered ?? "—"} />
-        <KpiCard label="Actions Completed" value={tracker.actionsExecuted ?? "—"} />
-        <KpiCard label="Save Success Rate" value={tracker.saveSuccessRate != null ? `${tracker.saveSuccessRate}%` : "—"} trend="up" />
-        <KpiCard label="Revenue Protected" value={tracker.totalImpactGenerated != null ? `$${(tracker.totalImpactGenerated / 1000).toFixed(0)}K` : "—"} trend="up" />
-        <KpiCard label="Cost Spent" value={tracker.totalCostSpent != null ? `$${(tracker.totalCostSpent / 1000).toFixed(1)}K` : "—"} />
-        <KpiCard label="ROI" value={tracker.totalCostSpent > 0 ? `${((tracker.totalImpactGenerated / tracker.totalCostSpent)).toFixed(1)}×` : "—"} trend="up" />
-        <KpiCard label="In Progress" value={(queue.inProgress || []).length} />
-        <KpiCard label="Pending Review" value={(queue.pending || []).length} />
+    <OrionLayout
+      title="Outcomes & Performance"
+      subtitle="Price elasticity results, brand insights, and deployment status"
+      isLoading={isLoading}
+    >
+      <div className="mb-4">
+        <OrionNav current={`${CPG_BASE}/outcomes`} basePath={CPG_BASE} />
       </div>
 
-      <Tabs defaultValue="overview">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+        <KpiCard label="Total Runs" value={allModels.length} />
+        <KpiCard label="Deployed" value={deployedModel ? 1 : 0} trend="up" color={deployedModel ? "green" : "amber"} />
+        <KpiCard label="Production Elasticity" value={globalElas != null ? Number(globalElas).toFixed(3) : "—"} />
+        <KpiCard
+          label="Highly Elastic Brands"
+          value={deployedModel ? highlyElastic.length : "—"}
+          color={highlyElastic.length > 0 ? "amber" : "green"}
+        />
+        <KpiCard label="Total Brands Scored" value={deployedModel ? brandData.length : "—"} />
+        <KpiCard
+          label="Rows Processed"
+          value={deployedModel
+            ? (deployedModel.rowCount ?? deployedModel.modelWeights?.rowsProcessed)?.toLocaleString() ?? "—"
+            : "—"}
+        />
+      </div>
+
+      <Tabs defaultValue="charts">
         <TabsList className="mb-4">
-          <TabsTrigger value="overview" data-testid="tab-outcomes-overview">Outcome Analysis</TabsTrigger>
-          <TabsTrigger value="actions" data-testid="tab-outcomes-actions">Action Queue</TabsTrigger>
-          <TabsTrigger value="predictions" data-testid="tab-outcomes-predictions">ML Predictions</TabsTrigger>
+          <TabsTrigger value="charts">Performance Charts</TabsTrigger>
+          <TabsTrigger value="results">Model Results</TabsTrigger>
+          <TabsTrigger value="deployment">Deployment</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="overview">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-4">
+        {/* ── Performance Charts ── */}
+        <TabsContent value="charts">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            {/* Brand Elasticity Distribution donut */}
             <div className="border rounded-lg p-4 bg-card">
-              <h3 className="text-sm font-semibold mb-3">Outcome Distribution</h3>
-              {outcomePie.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">No completed actions yet.</p>
+              <h3 className="text-sm font-semibold">Brand Elasticity Distribution</h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Red = highly elastic (&lt;−1) · Blue = inelastic · Green = positive
+              </p>
+              {pieData.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">
+                  No deployed model yet — deploy a model to see brand distribution.
+                </p>
               ) : (
-                <ResponsiveContainer width="100%" height={180}>
-                  <PieChart>
-                    <Pie data={outcomePie} dataKey="value" cx="50%" cy="50%" outerRadius={70} label={({ name, value }) => `${name}: ${value}`} labelLine={false}>
-                      {outcomePie.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-                    </Pie>
-                    <Tooltip />
-                  </PieChart>
-                </ResponsiveContainer>
+                <>
+                  <div className="relative flex justify-center">
+                    <PieChart width={200} height={180}>
+                      <Pie
+                        data={pieData}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius={52}
+                        outerRadius={80}
+                        paddingAngle={2}
+                      >
+                        {pieData.map((entry, i) => (
+                          <Cell key={i} fill={entry.fill} />
+                        ))}
+                      </Pie>
+                      <Tooltip
+                        formatter={(v: any, name: any) => [`${v} brands`, name]}
+                        contentStyle={{ fontSize: 11 }}
+                      />
+                    </PieChart>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                      <span className="text-base font-bold leading-tight">{brandData.length}</span>
+                      <span className="text-[9px] text-muted-foreground">brands</span>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap justify-center gap-x-3 gap-y-1 mt-1 mb-3">
+                    {[
+                      { label: "Highly Elastic", count: highlyElastic.length, fill: "#ef4444" },
+                      { label: "Inelastic", count: inelastic.length, fill: "#3b82f6" },
+                      { label: "Positive", count: positive.length, fill: "#10b981" },
+                    ].map(d => (
+                      <span key={d.label} className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                        <span className="inline-block w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: d.fill }} />
+                        {d.label}
+                        <span className="font-medium text-foreground">{d.count}</span>
+                      </span>
+                    ))}
+                  </div>
+                  <div className="flex gap-4 justify-center text-xs border-t pt-2">
+                    <span>Global Elasticity: <strong className={globalElas != null && globalElas < -1 ? "text-red-600" : "text-blue-600"}>{globalElas != null ? Number(globalElas).toFixed(3) : "—"}</strong></span>
+                    <span>Brands: <strong>{brandData.length}</strong></span>
+                  </div>
+                </>
               )}
             </div>
 
-            <div className="border rounded-lg p-4 bg-card col-span-2">
-              <h3 className="text-sm font-semibold mb-3">Save Rate by Action Type</h3>
-              {actionData.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">No action data yet.</p>
+            {/* Global Elasticity Comparison */}
+            <div className="border rounded-lg p-4 bg-card">
+              <h3 className="text-sm font-semibold">Global Elasticity by Run</h3>
+              <p className="text-xs text-muted-foreground mb-3">
+                Negative = price reduces demand (expected) · last 8 runs
+              </p>
+              {comparisonData.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">No runs yet.</p>
               ) : (
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={actionData} margin={{ left: -10 }}>
-                    <XAxis dataKey="name" tick={{ fontSize: 9 }} />
-                    <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} unit="%" />
-                    <Tooltip formatter={(v: any) => `${v}%`} />
-                    <Bar dataKey="rate" name="Save Rate %" fill="#10b981" radius={[2, 2, 0, 0]} />
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={comparisonData} margin={{ left: -10 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} />
+                    <Tooltip formatter={(v: any) => [Number(v).toFixed(3), "Global Elasticity"]} />
+                    <ReferenceLine y={0} stroke="#666" strokeDasharray="3 3" />
+                    <Bar dataKey="elasticity" radius={[2, 2, 0, 0]}>
+                      {comparisonData.map((entry, i) => (
+                        <Cell key={i} fill={entry.fill} />
+                      ))}
+                    </Bar>
                   </BarChart>
                 </ResponsiveContainer>
               )}
             </div>
           </div>
 
-          {revenueTimeline.length > 0 && (
-            <div className="border rounded-lg p-4 bg-card mb-4">
-              <h3 className="text-sm font-semibold mb-3">Revenue Protected Timeline</h3>
-              <ResponsiveContainer width="100%" height={150}>
-                <LineChart data={revenueTimeline} margin={{ left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis dataKey="month" tick={{ fontSize: 10 }} />
-                  <YAxis tick={{ fontSize: 10 }} />
-                  <Tooltip formatter={(v: any) => `$${v.toLocaleString()}`} />
-                  <Line type="monotone" dataKey="revenue" stroke="#10b981" strokeWidth={2} dot={false} name="Revenue Protected" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          )}
-
+          {/* Algorithm Summary */}
           <div className="border rounded-lg p-4 bg-card">
-            <h3 className="text-sm font-semibold mb-3">Action Type Performance</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-muted/50"><tr>{["Action Type", "Total", "Retained", "Save Rate", "Avg Impact", "Avg Cost"].map(h => <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>)}</tr></thead>
-                <tbody>
-                  {actionData.length === 0 && <tr><td colSpan={6} className="p-6 text-center text-muted-foreground">No data yet.</td></tr>}
-                  {actionData.map((a, i) => {
-                    const typeRecs = recs.filter((r: any) => r.actionType === a.name);
-                    const avgImpact = typeRecs.length > 0 ? typeRecs.reduce((s: number, r: any) => s + (r.estimatedImpact || 0), 0) / typeRecs.length : 0;
-                    const avgCost = typeRecs.length > 0 ? typeRecs.reduce((s: number, r: any) => s + (r.estimatedCost || 0), 0) / typeRecs.length : 0;
-                    return (
-                      <tr key={i} className="border-t">
-                        <td className="p-3 font-medium">{a.name.replace(/_/g, " ")}</td>
-                        <td className="p-3">{a.total}</td>
-                        <td className="p-3 text-green-600">{a.saved}</td>
-                        <td className="p-3"><Badge className={a.rate >= 60 ? "bg-green-100 text-green-700" : a.rate >= 30 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}>{a.rate}%</Badge></td>
-                        <td className="p-3">{avgImpact > 0 ? `$${avgImpact.toFixed(0)}` : "—"}</td>
-                        <td className="p-3">{avgCost > 0 ? `$${avgCost.toFixed(0)}` : "—"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </TabsContent>
-
-        <TabsContent value="actions">
-          <div className="space-y-4">
-            {["inProgress", "pending", "completed", "declined"].map(status => {
-              const statusRecs = (queue[status] || []) as any[];
-              const label = { inProgress: "In Progress", pending: "Pending", completed: "Completed", declined: "Declined" }[status];
-              return (
-                <div key={status} className="border rounded-lg bg-card">
-                  <div className="p-3 border-b flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">{label}</h3>
-                    <Badge variant="outline">{statusRecs.length}</Badge>
-                  </div>
-                  {statusRecs.length === 0 ? (
-                    <p className="text-xs text-muted-foreground p-4">None</p>
-                  ) : (
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-xs">
-                        <thead className="bg-muted/50"><tr>{["Customer", "Action", "Priority", "Impact", "Cost", "Outcome", ...(status === "pending" ? ["Actions"] : [])].map(h => <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>)}</tr></thead>
-                        <tbody>
-                          {statusRecs.slice(0, 20).map((r: any) => (
-                            <tr key={r.id} className="border-t hover:bg-muted/20" data-testid={`row-rec-${r.id}`}>
-                              <td className="p-3 font-medium">{r.customerName || `#${r.customerId}`}</td>
-                              <td className="p-3">{r.actionType?.replace(/_/g, " ")}</td>
-                              <td className="p-3"><Badge className={r.priority === "high" ? "bg-red-100 text-red-700" : r.priority === "medium" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}>{r.priority}</Badge></td>
-                              <td className="p-3">{r.estimatedImpact ? `$${r.estimatedImpact.toFixed(0)}` : "—"}</td>
-                              <td className="p-3">{r.estimatedCost ? `$${r.estimatedCost.toFixed(0)}` : "—"}</td>
-                              <td className="p-3">{r.outcome ? <Badge className={(OUTCOME_COLORS as any)[r.outcome] ? "" : ""} style={{ backgroundColor: `${(OUTCOME_COLORS as any)[r.outcome]}20`, color: (OUTCOME_COLORS as any)[r.outcome] }}>{r.outcome}</Badge> : <span className="text-muted-foreground">—</span>}</td>
-                              {status === "pending" && (
-                                <td className="p-3">
-                                  <div className="flex gap-1">
-                                    <Button size="sm" className="h-5 text-[10px]" onClick={() => updateRecMut.mutate({ id: r.id, data: { status: "in_progress" } })}>Start</Button>
-                                    <Button size="sm" variant="outline" className="h-5 text-[10px]" onClick={() => updateRecMut.mutate({ id: r.id, data: { status: "declined" } })}>Decline</Button>
-                                  </div>
-                                </td>
-                              )}
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+            <h3 className="text-sm font-semibold mb-1">Algorithm Performance Summary</h3>
+            <p className="text-xs text-muted-foreground mb-4">
+              Avg global elasticity and rows processed grouped by algorithm
+            </p>
+            {algoSummary.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">No data yet.</p>
+            ) : (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {algoSummary.map(d => (
+                  <div key={d.algo} className="border rounded-lg p-3 bg-muted/30">
+                    <div className="text-xs font-medium text-muted-foreground mb-2">{d.algo}</div>
+                    <div className="flex items-baseline gap-1 mb-1">
+                      <span
+                        className="text-xl font-bold"
+                        style={{
+                          color: d.avgElasticity < -1 ? "#dc2626" : d.avgElasticity < 0 ? "#2563eb" : "#16a34a",
+                        }}
+                      >
+                        {d.avgElasticity !== 0 ? d.avgElasticity.toFixed(3) : "—"}
+                      </span>
+                      <span className="text-xs text-muted-foreground">avg elasticity</span>
                     </div>
-                  )}
-                </div>
-              );
-            })}
+                    <div className="text-sm">
+                      <span className="font-semibold">{d.avgRows.toLocaleString()}</span>
+                      <span className="text-xs text-muted-foreground ml-1">avg rows</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      {d.runs} run{d.runs !== 1 ? "s" : ""}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </TabsContent>
 
-        <TabsContent value="predictions">
+        {/* ── Model Results ── */}
+        <TabsContent value="results">
           <div className="border rounded-lg bg-card">
             <div className="p-4 border-b">
-              <h3 className="text-sm font-semibold">Model Attribution</h3>
-              <p className="text-xs text-muted-foreground mt-1">How many predictions each model has generated</p>
+              <h3 className="text-sm font-semibold">All Runs</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {sortedModels.length} run{sortedModels.length !== 1 ? "s" : ""} · sorted by training date (newest first)
+              </p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="bg-muted/50"><tr>{["Model", "Algorithm", "Status", "Predictions Generated", "% of Total"].map(h => <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>)}</tr></thead>
+                <thead className="bg-muted/50">
+                  <tr>
+                    {["Run Name", "Algorithm", "Global Elasticity", "Converged", "Brands Scored", "Rows Processed", "Status", "Trained"].map(h => (
+                      <th key={h} className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
                 <tbody>
-                  {(models as any[]).length === 0 && <tr><td colSpan={5} className="p-6 text-center text-muted-foreground">No models trained yet.</td></tr>}
-                  {(models as any[]).map(m => {
-                    const cnt = predByModel[m.id] || 0;
-                    const totalAccounts = m.datasetId && (datasetAccountCounts as any)[m.datasetId]
-                      ? (datasetAccountCounts as any)[m.datasetId]
-                      : (allPreds as any[]).length;
-                    const pct = totalAccounts > 0 ? ((cnt / totalAccounts) * 100).toFixed(1) : "0";
+                  {sortedModels.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="p-6 text-center text-muted-foreground">
+                        No runs yet. Run an experiment from the Experiments page.
+                      </td>
+                    </tr>
+                  )}
+                  {sortedModels.map(m => {
+                    const elas = m.modelWeights?.globalPriceElasticity ?? m.r2 ?? null;
                     return (
-                      <tr key={m.id} className="border-t">
-                        <td className="p-3 font-medium max-w-[200px] truncate">{m.name}</td>
-                        <td className="p-3">{m.algorithm}</td>
-                        <td className="p-3"><StatusBadge status={m.isDeployed ? "Production" : m.status} /></td>
-                        <td className="p-3">{cnt.toLocaleString()}</td>
+                      <tr key={m.id} className="border-t hover:bg-muted/20">
+                        <td className="p-3 font-medium max-w-[180px] truncate">{m.name}</td>
+                        <td className="p-3 text-muted-foreground">{m.algorithm}</td>
+                        <td
+                          className="p-3 font-mono font-bold"
+                          style={{
+                            color: elas == null ? undefined : elas < -1 ? "#dc2626" : elas < 0 ? "#2563eb" : "#16a34a",
+                          }}
+                        >
+                          {elas != null ? Number(elas).toFixed(3) : "—"}
+                        </td>
                         <td className="p-3">
-                          <div className="flex items-center gap-2">
-                            <div className="h-1.5 w-20 bg-muted rounded-full overflow-hidden"><div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} /></div>
-                            <span>{pct}%</span>
-                          </div>
+                          {m.modelWeights?.modelConverged == null
+                            ? "—"
+                            : m.modelWeights.modelConverged
+                            ? <span className="text-green-600 font-medium">Yes</span>
+                            : <span className="text-amber-600 font-medium">No</span>}
+                        </td>
+                        <td className="p-3 font-mono">{m.modelWeights?.elasticitySummary?.length ?? "—"}</td>
+                        <td className="p-3 font-mono">
+                          {(m.rowCount ?? m.modelWeights?.rowsProcessed)?.toLocaleString() ?? "—"}
+                        </td>
+                        <td className="p-3">
+                          <StatusBadge status={m.isDeployed ? "Production" : m.status} />
+                        </td>
+                        <td className="p-3 text-muted-foreground whitespace-nowrap">
+                          {m.trainedAt ? new Date(m.trainedAt).toLocaleDateString() : "—"}
                         </td>
                       </tr>
                     );
@@ -272,52 +306,113 @@ export default function OrionOutcomes() {
               </table>
             </div>
           </div>
+        </TabsContent>
 
-          <div className="border rounded-lg bg-card mt-4">
-            <div className="p-4 border-b flex items-center justify-between flex-wrap gap-2">
-              <div>
-                <h3 className="text-sm font-semibold">ML Predictions</h3>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  {(allPreds as any[]).length > 0
-                    ? `Showing ${(allPreds as any[]).length} customers (active, latest snapshot, min tenure filtered)`
-                    : "No predictions yet"}
-                </p>
-              </div>
-              <select
-                className="text-xs border rounded px-2 py-1 bg-background"
-                value={activeModelId ?? ""}
-                onChange={e => setSelectedModelId(e.target.value ? Number(e.target.value) : null)}
-              >
-                <option value="">All models</option>
-                {(models as any[]).map((m: any) => (
-                  <option key={m.id} value={m.id}>{m.name}</option>
-                ))}
-              </select>
+        {/* ── Deployment ── */}
+        <TabsContent value="deployment">
+          <div className="border rounded-lg bg-card">
+            <div className="p-4 border-b">
+              <h3 className="text-sm font-semibold">Deployed Model</h3>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {deployedModel ? "1 model currently in production" : "No model deployed yet"}
+              </p>
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
-                <thead className="bg-muted/50"><tr>{["account_number", "risk_band", "predicted_churn_probability_next_3m", "final_recommendation"].map(h => <th key={h} className="text-left p-3 font-medium text-muted-foreground font-mono">{h}</th>)}</tr></thead>
+                <thead className="bg-muted/50">
+                  <tr>
+                    {["Model", "Algorithm", "Global Elasticity", "Converged", "Brands Scored", "Rows Processed", "Deployed"].map(h => (
+                      <th key={h} className="text-left p-3 font-medium text-muted-foreground whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
                 <tbody>
-                  {(allPreds as any[]).map((p: any) => {
-                    const rc = (p.riskCategory ?? "").toLowerCase();
-                    const riskLabel = rc === "very high" ? "Very High Risk" : rc === "high" ? "High Risk" : rc === "medium" ? "Medium Risk" : "Low Risk";
-                    const riskBadgeClass = rc === "very high" ? "bg-red-200 text-red-900" : rc === "high" ? "bg-red-100 text-red-700" : rc === "medium" ? "bg-amber-100 text-amber-700" : "bg-green-100 text-green-700";
+                  {!deployedModel && (
+                    <tr>
+                      <td colSpan={7} className="p-6 text-center text-muted-foreground">
+                        No model deployed yet. Deploy from the Deploy &amp; Scoring page.
+                      </td>
+                    </tr>
+                  )}
+                  {deployedModel && (() => {
+                    const elas = deployedModel.modelWeights?.globalPriceElasticity ?? deployedModel.r2 ?? null;
                     return (
-                      <tr key={p.id} className="border-t hover:bg-muted/20">
-                        <td className="p-3 font-mono">{p.accountNumber}</td>
-                        <td className="p-3"><Badge className={riskBadgeClass}>{riskLabel}</Badge></td>
-                        <td className="p-3 font-mono">{(p.churnProbability * 100).toFixed(2)}%</td>
-                        <td className="p-3 text-muted-foreground max-w-[320px] whitespace-normal">{p.recommendedAction || "\u2014"}</td>
+                      <tr className="border-t hover:bg-muted/20">
+                        <td className="p-3 font-medium max-w-[200px] truncate">{deployedModel.name}</td>
+                        <td className="p-3">{deployedModel.algorithm}</td>
+                        <td
+                          className="p-3 font-mono font-bold"
+                          style={{ color: elas == null ? undefined : elas < -1 ? "#dc2626" : elas < 0 ? "#2563eb" : "#16a34a" }}
+                        >
+                          {elas != null ? Number(elas).toFixed(3) : "—"}
+                        </td>
+                        <td className="p-3">
+                          {deployedModel.modelWeights?.modelConverged
+                            ? <span className="text-green-600 font-medium">Yes</span>
+                            : <span className="text-amber-600 font-medium">No</span>}
+                        </td>
+                        <td className="p-3 font-mono">{deployedModel.modelWeights?.elasticitySummary?.length ?? "—"}</td>
+                        <td className="p-3 font-mono">
+                          {(deployedModel.rowCount ?? deployedModel.modelWeights?.rowsProcessed)?.toLocaleString() ?? "—"}
+                        </td>
+                        <td className="p-3 text-emerald-600 whitespace-nowrap">
+                          {deployedModel.trainedAt ? new Date(deployedModel.trainedAt).toLocaleDateString() : "—"}
+                        </td>
                       </tr>
                     );
-                  })}
-                  {(allPreds as any[]).length === 0 && (
-                    <tr><td colSpan={4} className="p-6 text-center text-muted-foreground">No predictions yet. Train a model from the Experiments tab to generate predictions.</td></tr>
-                  )}
+                  })()}
                 </tbody>
               </table>
             </div>
           </div>
+
+          {sortedModels.filter(m => !m.isDeployed).length > 0 && (
+            <div className="border rounded-lg bg-card mt-4">
+              <div className="p-4 border-b">
+                <h3 className="text-sm font-semibold">Trained · Not Deployed</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Available to deploy from the Deploy &amp; Scoring page</p>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead className="bg-muted/50">
+                    <tr>
+                      {["Model", "Algorithm", "Global Elasticity", "Converged", "Status", "Trained"].map(h => (
+                        <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedModels.filter(m => !m.isDeployed).map(m => {
+                      const elas = m.modelWeights?.globalPriceElasticity ?? m.r2 ?? null;
+                      return (
+                        <tr key={m.id} className="border-t hover:bg-muted/20">
+                          <td className="p-3 font-medium max-w-[200px] truncate">{m.name}</td>
+                          <td className="p-3 text-muted-foreground">{m.algorithm}</td>
+                          <td
+                            className="p-3 font-mono"
+                            style={{ color: elas == null ? undefined : elas < -1 ? "#dc2626" : elas < 0 ? "#2563eb" : "#16a34a" }}
+                          >
+                            {elas != null ? Number(elas).toFixed(3) : "—"}
+                          </td>
+                          <td className="p-3">
+                            {m.modelWeights?.modelConverged == null
+                              ? "—"
+                              : m.modelWeights.modelConverged
+                              ? <span className="text-green-600 font-medium">Yes</span>
+                              : <span className="text-amber-600 font-medium">No</span>}
+                          </td>
+                          <td className="p-3"><StatusBadge status={m.status} /></td>
+                          <td className="p-3 text-muted-foreground whitespace-nowrap">
+                            {m.trainedAt ? new Date(m.trainedAt).toLocaleDateString() : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </TabsContent>
       </Tabs>
     </OrionLayout>

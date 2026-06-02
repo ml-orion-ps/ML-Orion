@@ -14,7 +14,7 @@ import {
 const COLORS = ["hsl(210, 75%, 38%)", "hsl(185, 70%, 35%)", "hsl(25, 75%, 42%)", "hsl(280, 65%, 38%)", "hsl(140, 60%, 35%)"];
 
 export default function BusinessImpact() {
-  const [, params] = useRoute("/tmt/customer-churn/business-impact/:tab");
+  const [, params] = useRoute("/cpg/baseline-modelling/business-impact/:tab");
   const [, navigate] = useLocation();
   const activeTab = params?.tab || "revenue";
   const { data, isLoading } = useQuery<any>({ queryKey: ["/api/analytics/business-impact"] });
@@ -31,7 +31,7 @@ export default function BusinessImpact() {
         <p className="text-sm text-muted-foreground mt-1">Financial metrics, ROI analysis, and migration economics</p>
       </div>
 
-      <Tabs value={activeTab} onValueChange={(v) => navigate(`/tmt/customer-churn/business-impact/${v}`)} className="space-y-4">
+      <Tabs value={activeTab} onValueChange={(v) => navigate(`/cpg/baseline-modelling/business-impact/${v}`)} className="space-y-4">
         <TabsList data-testid="business-impact-tabs">
           <TabsTrigger value="revenue" data-testid="tab-revenue-protection">Revenue Protection</TabsTrigger>
           <TabsTrigger value="roi" data-testid="tab-roi-analysis">ROI Analysis</TabsTrigger>

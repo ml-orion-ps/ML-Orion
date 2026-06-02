@@ -41,9 +41,29 @@ def model_monitoring(
     model_preds = [p for p in all_predictions if p["model_id"] == model_id]
     total_preds = len(model_preds)
 
-    base_auc    = model.auc or 0.85
-    base_acc    = model.accuracy or 0.82
-    base_recall = model.recall or 0.78
+    base_r2 = model.r2 if model.r2 is not None else 0.82
+    base_wmape = model.wmape if model.wmape is not None else 0.14
+    base_mae = model.mae if model.mae is not None else 0.0
+
+    # Legacy classification-shaped fields are still populated for older UI paths.
+    base_auc    = model.auc or base_r2
+    base_acc    = model.accuracy or max(0.0, min(0.99, 1 - base_wmape))
+    base_recall = model.recall or max(0.0, min(0.99, base_r2 - base_wmape * 0.25))
+
+    weights = model.model_weights if isinstance(model.model_weights, dict) else {}
+    prod_metrics = weights.get("prodMetrics") if isinstance(weights.get("prodMetrics"), dict) else {}
+    has_matching_prod_metrics = (
+        prod_dataset_id is not None
+        and weights.get("prodDatasetId") == prod_dataset_id
+        and bool(prod_metrics)
+    )
+    effective_r2 = prod_metrics.get("r2") if has_matching_prod_metrics else base_r2
+    effective_wmape = (
+        prod_metrics.get("test_wmape")
+        if has_matching_prod_metrics and prod_metrics.get("test_wmape") is not None
+        else prod_metrics.get("wmape") if has_matching_prod_metrics else base_wmape
+    )
+    effective_mae = prod_metrics.get("mae") if has_matching_prod_metrics else base_mae
 
     # Optional prod-dataset live analysis
     prod_dataset_info = None
@@ -175,6 +195,9 @@ def model_monitoring(
         s_auc = round(min(0.99, max(0.50, base_auc    - decay           + noise      )), 4)
         s_acc = round(min(0.99, max(0.50, base_acc    - decay * 1.1     + noise * 0.8)), 4)
         s_rec = round(min(0.99, max(0.40, base_recall - decay * 1.4     + noise * 1.2)), 4)
+        s_r2 = round(min(0.99, max(0.0, base_r2 - decay + noise)), 4)
+        s_wmape = round(max(0.0, base_wmape + decay * 0.8 - noise * 0.25), 4)
+        s_mae = round(max(0.0, base_mae * (1 + decay) - noise * max(base_mae, 1) * 0.1), 4)
         s_psi = round(min(0.40, weeks_ago * 0.018 + abs(math.sin(i * 1.7 + 0.5)) * 0.045), 4)
         s_ks  = round(min(0.30, 0.03 + weeks_ago * 0.012 + abs(math.sin(i * 1.3)) * 0.025), 4)
         s_vol  = max(10, (total_preds or 38) + weeks_ago * 3 + round(math.sin(i * 0.9) * 8))
@@ -185,6 +208,7 @@ def model_monitoring(
             "modelId": model_id, "date": date, "label": f"W{i + 1}",
             "evaluationMonth": None, "isSynthetic": True,
             "auc": s_auc, "accuracy": s_acc, "recall": s_rec,
+            "r2": s_r2, "wmape": s_wmape, "mae": s_mae,
             "precision": None, "f1Score": None,
             "psi": s_psi, "ks": s_ks, "featureDriftScore": round(min(0.35, s_psi * 0.85), 4),
             "volume": s_vol, "highRiskPct": s_high, "medRiskPct": s_med, "lowRiskPct": s_low,
@@ -203,6 +227,7 @@ def model_monitoring(
             "modelId": model_id, "date": now.strftime("%Y-%m-%d"),
             "label": now.strftime("%b %Y"), "evaluationMonth": None, "isSynthetic": False,
             "auc": effective_auc, "accuracy": effective_acc, "recall": effective_recall,
+            "r2": effective_r2, "wmape": effective_wmape, "mae": effective_mae,
             "precision": None, "f1Score": None,
             "psi": ls_psi, "ks": ls_ks, "featureDriftScore": ls_drift,
             "volume": prod_dataset_info["rows"] if prod_dataset_info else total_preds,
@@ -225,6 +250,9 @@ def model_monitoring(
                 "auc":      run.auc      or base_auc,
                 "accuracy": run.accuracy or base_acc,
                 "recall":   run.recall   or base_recall,
+                "r2":       run.auc      or base_r2,
+                "wmape":    base_wmape,
+                "mae":      base_mae,
                 "precision": run.precision, "f1Score": run.f1_score,
                 "psi": run.psi or 0, "ks": run.ks or 0,
                 "featureDriftScore": round((run.psi or 0) * 0.8, 4),
@@ -247,6 +275,9 @@ def model_monitoring(
                 "auc":      run.auc      if run.has_labels else (run.auc      or base_auc),
                 "accuracy": run.accuracy if run.has_labels else (run.accuracy or base_acc),
                 "recall":   run.recall   if run.has_labels else (run.recall   or base_recall),
+                "r2":        run.auc      or base_r2,
+                "wmape":     base_wmape,
+                "mae":       base_mae,
                 "precision": run.precision if run.has_labels else None,
                 "f1Score":   run.f1_score  if run.has_labels else None,
                 "psi": run.psi or 0,
@@ -269,6 +300,7 @@ def model_monitoring(
             "date": s["date"], "label": s["label"],
             "evaluationMonth": None, "hasLabels": False,
             "auc": s["auc"], "accuracy": s["accuracy"], "recall": s["recall"],
+            "r2": s.get("r2", s["auc"]), "wmape": s.get("wmape", base_wmape), "mae": s.get("mae", base_mae),
             "precision": None, "f1Score": None,
             "psi": s["psi"], "ks": s["ks"],
             "volume": s["volume"], "highRiskPct": s["highRiskPct"],
@@ -507,6 +539,9 @@ def model_monitoring(
             "latestAuc":         latest_s.get("auc"),
             "latestAccuracy":    latest_s.get("accuracy"),
             "latestRecall":      latest_s.get("recall"),
+            "latestR2":          latest_s.get("r2"),
+            "latestWmape":       latest_s.get("wmape"),
+            "latestMae":         latest_s.get("mae"),
             "latestPsi":         latest_s.get("psi"),
             "latestKs":          latest_s.get("ks"),
             "latestHighRiskPct": latest_s.get("highRiskPct"),

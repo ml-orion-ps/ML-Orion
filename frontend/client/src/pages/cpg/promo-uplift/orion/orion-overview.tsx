@@ -1,7 +1,7 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { OrionLayout, KpiCard, StatusBadge, OrionNav } from "@/components/orion-layout";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { Button } from "@/components/ui/button";
 import {
   Rocket,
@@ -20,8 +20,21 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 
-const RISK_COLORS = { veryHigh: "#dc2626", high: "#ef4444", medium: "#f59e0b", low: "#22c55e" };
 const BAR_COLORS = ["#3b82f6", "#8b5cf6", "#10b981"];
+const PROMO_COLORS = ["#FFD822","#3b82f6","#a78bfa","#f97316","#22c55e","#ec4899","#14b8a6","#f43f5e","#84cc16","#06b6d4"];
+
+function getPromoData(m: any) {
+  const summary = (m.modelWeights?.summary) || {};
+  const metrics  = summary.metrics || {};
+  return {
+    r2:           metrics.r2   as number | undefined,
+    rmse:         metrics.rmse as number | undefined,
+    mae:          metrics.mae  as number | undefined,
+    rowCount:     summary.rowCount as number | undefined,
+    promoColumns: (summary.promoColumnsUsed || []) as string[],
+    promoSummary: (summary.promoSummary || {}) as Record<string, any>,
+  };
+}
 
 type CodeFileTab = {
   id: string;
@@ -46,16 +59,8 @@ export default function OrionOverview() {
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState<string | null>(null);
   const [savedBanner, setSavedBanner] = useState(false);
-  const [selectedModelId, setSelectedModelId] = useState<number | null>(null);
-
-  const { data, isLoading } = useQuery<any>({ queryKey: ["/api/orion/overview"] });
-  const { data: models } = useQuery<any[]>({ queryKey: ["/api/models"] });
-  const { data: modelRiskDist } = useQuery<any>({
-    queryKey: ["/api/orion/risk-distribution", selectedModelId],
-    queryFn: () =>
-      fetch(`/api/orion/risk-distribution${selectedModelId ? `?modelId=${selectedModelId}` : ""}`)
-        .then(r => r.json()),
-  });
+  const { data, isLoading } = useQuery<any>({ queryKey: ["/api/cpg/promoUplift/orion/overview"] });
+  const { data: models } = useQuery<any[]>({ queryKey: ["/api/cpg/promoUplift/models"] });
   const { data: codeFiles } = useQuery<CodeFileTab[]>({
     queryKey: ["/api/code/files"],
   });
@@ -68,12 +73,12 @@ export default function OrionOverview() {
   });
 
   const deployMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/models/${id}/deploy`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/models"] }); qc.invalidateQueries({ queryKey: ["/api/orion/overview"] }); toast({ title: "Model deployed" }); },
+    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/promoUplift/models/${id}/deploy`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/models"] }); qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/orion/overview"] }); toast({ title: "Model deployed" }); },
   });
   const undeployMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/models/${id}/undeploy`),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/models"] }); qc.invalidateQueries({ queryKey: ["/api/orion/overview"] }); toast({ title: "Model undeployed" }); },
+    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/promoUplift/models/${id}/undeploy`),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/models"] }); qc.invalidateQueries({ queryKey: ["/api/cpg/promoUplift/orion/overview"] }); toast({ title: "Model undeployed" }); },
   });
   const saveMut = useMutation({
     mutationFn: async ({ fileId, content }: { fileId: string; content: string }) => {
@@ -109,101 +114,99 @@ export default function OrionOverview() {
   };
 
   const kpis = data?.kpis || {};
-  const riskDist = data?.riskDistribution || { low: 0, medium: 0, high: 0, veryHigh: 0 };
 
-  // Use model-specific distribution if a model is chosen, else fall back to overview data
-  const activeDist = selectedModelId && modelRiskDist?.isModel
-    ? { low: modelRiskDist.low, medium: modelRiskDist.medium, high: modelRiskDist.high, veryHigh: modelRiskDist.veryHigh }
-    : riskDist;
+  // Promo-specific KPIs derived from models list
+  const allModels: any[] = models || [];
+  const deployedModels = allModels.filter((m: any) => m.isDeployed);
+  const avgR2 = deployedModels.length > 0
+    ? deployedModels.reduce((s: number, m: any) => s + (getPromoData(m).r2 ?? m.auc ?? 0), 0) / deployedModels.length
+    : null;
+  const totalRows = allModels.reduce((s: number, m: any) => s + (getPromoData(m).rowCount ?? 0), 0);
 
-  // Use model-specific churn rate and revenue at risk if a model is selected
-  const activeChurnRate = selectedModelId && modelRiskDist?.isModel ? modelRiskDist.churnRate : data?.churnRate;
-  const activeRevenueAtRisk = selectedModelId && modelRiskDist?.isModel ? modelRiskDist.revenueAtRisk : data?.revenueAtRisk;
+  // Best mechanic from the latest deployed (or latest trained) model
+  const latestModel = [...allModels].sort((a, b) =>
+    new Date(b.trainedAt ?? 0).getTime() - new Date(a.trainedAt ?? 0).getTime()
+  )[0];
+  const latestData = latestModel ? getPromoData(latestModel) : null;
+  const mechanicEntries = latestData
+    ? Object.entries(latestData.promoSummary)
+        .map(([name, s]: [string, any]) => ({ name, totalUplift: s.totalUpliftUnits || 0, avgPct: (s.avgPctUplift || 0) * 100 }))
+        .sort((a, b) => b.totalUplift - a.totalUplift)
+    : [];
+  const bestMechanic = mechanicEntries[0];
+  const totalUplift  = mechanicEntries.reduce((s, d) => s + d.totalUplift, 0);
 
-  const pieData = [
-    { name: "Very High Risk", value: activeDist.veryHigh || 0, color: RISK_COLORS.veryHigh },
-    { name: "High Risk", value: activeDist.high, color: RISK_COLORS.high },
-    { name: "Medium Risk", value: activeDist.medium, color: RISK_COLORS.medium },
-    { name: "Low Risk", value: activeDist.low, color: RISK_COLORS.low },
-  ];
+  // Per-model R² chart data (for performance comparison)
+  const perfData = allModels
+    .filter((m: any) => getPromoData(m).r2 != null || m.auc != null)
+    .slice(0, 6)
+    .map((m: any) => {
+      const d = getPromoData(m);
+      return {
+        name:  (m.name || "").slice(0, 20),
+        r2:    parseFloat(((d.r2 ?? m.auc ?? 0) * 100).toFixed(1)),
+        rmse:  d.rmse != null ? parseFloat((d.rmse * 100).toFixed(2)) : 0,
+      };
+    });
 
-  const perfData = (data?.modelPerformance || []).slice(0, 6);
+  // Mechanic uplift chart (from latest model)
+  const mechanicChartData = mechanicEntries.slice(0, 10).map(e => ({
+    name:        e.name,
+    totalUplift: parseFloat(e.totalUplift.toFixed(1)),
+    avgPct:      parseFloat(e.avgPct.toFixed(2)),
+  }));
 
-  // Filter models to only trained ones for the dropdown
-  const trainedModels = (models || []).filter(
-    (m: any) => ["trained", "ready", "deployed", "production"].includes(
-      String(m.status || "").toLowerCase()
-    ) || m.isDeployed
-  );
 
   return (
-    <OrionLayout title="ML Orion Overview" subtitle="Decision model factory — all numbers from live database" isLoading={isLoading}>
-      <div className="mb-4"><OrionNav current="/orion/overview" /></div>
+    <OrionLayout title="ML Orion Overview" subtitle="Decision model factory �� all numbers from live database" isLoading={isLoading}>
+      <div className="mb-4"><OrionNav current="/cpg/promo-uplift/orion/overview" basePath="/cpg/promo-uplift/orion" /></div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-        <KpiCard label="Total Models" value={kpis.totalModels ?? "—"} />
-        <KpiCard label="Deployed" value={kpis.deployedModels ?? "—"} trend={kpis.deployedModels > 0 ? "up" : undefined} />
-        <KpiCard label="Avg AUC (Deployed)" value={kpis.avgAuc ? `${(kpis.avgAuc * 100).toFixed(1)}%` : "—"} />
-        <KpiCard label="Total Predictions" value={kpis.totalPredictions?.toLocaleString() ?? "—"} />
-        <KpiCard label="Customers Scored" value={kpis.customersScored?.toLocaleString() ?? "—"} />
+        <KpiCard label="Total Models" value={allModels.length || kpis.totalModels || 0} />
+        <KpiCard label="Deployed" value={deployedModels.length} color={deployedModels.length > 0 ? "green" : "default"} trend={deployedModels.length > 0 ? "up" : undefined} />
+        <KpiCard label="Avg R² (Deployed)" value={avgR2 != null ? `${(avgR2 * 100).toFixed(1)}%` : "—"} color={avgR2 != null && avgR2 >= 0.7 ? "green" : avgR2 != null && avgR2 >= 0.4 ? "amber" : "default"} />
+        <KpiCard label="Promo Analyses" value={allModels.length} />
+        <KpiCard label="Rows Analysed" value={totalRows > 0 ? totalRows.toLocaleString() : (kpis.customersScored?.toLocaleString() ?? "—")} />
         <KpiCard label="Datasets" value={kpis.totalDatasets ?? "—"} />
-        <KpiCard label="Retention Success" value={kpis.retentionSuccessRate ? `${kpis.retentionSuccessRate}%` : "—"} trend="up" />
-        <KpiCard label="Revenue at Risk" value={kpis.revenueAtRisk ? `$${(kpis.revenueAtRisk / 1000).toFixed(0)}K` : "—"} trend="down" />
+        <KpiCard label="Best Mechanic" value={bestMechanic?.name ?? "—"} color="green" />
+        <KpiCard label="Total Uplift Units" value={totalUplift > 0 ? totalUplift.toFixed(0) : "—"} trend="up" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
         <div className="border rounded-lg p-4 bg-card">
-          <h3 className="text-sm font-semibold mb-4">Model Performance Comparison</h3>
+          <h3 className="text-sm font-semibold mb-4">Model R² Comparison</h3>
           {perfData.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-8">No models trained yet. Go to Experiment Lab to train your first model.</p>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={perfData} margin={{ left: -10 }}>
-                <XAxis dataKey="name" tick={{ fontSize: 10 }} />
+                <XAxis dataKey="name" tick={{ fontSize: 9 }} />
                 <YAxis domain={[0, 100]} tick={{ fontSize: 10 }} unit="%" />
                 <Tooltip formatter={(v: any) => `${v}%`} />
-                <Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="accuracy" name="Accuracy" fill={BAR_COLORS[0]} radius={[2, 2, 0, 0]} />
-                <Bar dataKey="auc" name="AUC-ROC" fill={BAR_COLORS[1]} radius={[2, 2, 0, 0]} />
-                <Bar dataKey="f1" name="F1 Score" fill={BAR_COLORS[2]} radius={[2, 2, 0, 0]} />
+                <Bar dataKey="r2" name="R² Score" fill={BAR_COLORS[1]} radius={[2, 2, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}
         </div>
 
         <div className="border rounded-lg p-4 bg-card">
-          <div className="flex items-center justify-between mb-1">
-            <h3 className="text-sm font-semibold">Active Customer Risk Distribution</h3>
-            <select
-              className="text-xs border rounded px-2 py-1 bg-background"
-              value={selectedModelId ?? ""}
-              onChange={e => setSelectedModelId(e.target.value ? Number(e.target.value) : null)}
-            >
-              <option value="">Baseline (All Customers)</option>
-              {trainedModels.map((m: any) => (
-                <option key={m.id} value={m.id}>
-                  {m.name} ({m.algorithm})
-                </option>
-              ))}
-            </select>
-          </div>
-          <p className="text-xs text-muted-foreground mb-3">
-            {selectedModelId
-              ? `Showing predictions from selected model`
-              : "Same data powering Command Center — single source of truth"}
-          </p>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={pieData} dataKey="value" cx="50%" cy="50%" outerRadius={80} label={({ name, value }) => `${name}: ${value}`} labelLine={false}>
-                {pieData.map((entry, i) => <Cell key={i} fill={entry.color} />)}
-              </Pie>
-              <Tooltip />
-              <Legend wrapperStyle={{ fontSize: 11 }} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div className="flex gap-4 mt-2 justify-center text-xs">
-            <span>Churn Rate: <strong className="text-red-500">{activeChurnRate}%</strong></span>
-            <span>Revenue at Risk: <strong className="text-amber-500">${((activeRevenueAtRisk || 0) / 1000).toFixed(0)}K</strong></span>
-          </div>
+          <h3 className="text-sm font-semibold mb-1">Mechanic Uplift Distribution</h3>
+          <p className="text-xs text-muted-foreground mb-3">Total uplift units per promo mechanic — latest model</p>
+          {mechanicChartData.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">Run a promo uplift experiment to see mechanic results.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={mechanicChartData} margin={{ left: -10 }}>
+                <XAxis dataKey="name" tick={{ fontSize: 9 }} />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip />
+                <Bar dataKey="totalUplift" name="Total Uplift Units" radius={[2, 2, 0, 0]}>
+                  {mechanicChartData.map((_, i) => (
+                    <Cell key={i} fill={PROMO_COLORS[i % PROMO_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
         </div>
       </div>
 
@@ -218,7 +221,7 @@ export default function OrionOverview() {
             <Code2 className="w-4 h-4 text-primary" />
             <div>
               <span className="text-sm font-semibold">Backend Code Explorer</span>
-              <p className="text-[11px] text-muted-foreground mt-0.5">Review and modify ML pipeline source files — changes hot-reload immediately</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Review and modify ML pipeline source files �� changes hot-reload immediately</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -290,7 +293,7 @@ export default function OrionOverview() {
                         <RotateCcw className="w-3 h-3" /> Reset
                       </button>
                       <button onClick={saveEdit} disabled={saveMut.isPending} className="flex items-center gap-1 px-2 py-1 rounded bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50" data-testid="button-save-code">
-                        <Save className="w-3 h-3" /> {saveMut.isPending ? "Deploying…" : "Deploy Changes"}
+                        <Save className="w-3 h-3" /> {saveMut.isPending ? "Deploying..." : "Deploy Changes"}
                       </button>
                     </>
                   )}
@@ -305,7 +308,7 @@ export default function OrionOverview() {
                 </p>
               </div>
             )}
-            {codeLoading && <div className="h-64 flex items-center justify-center text-xs text-muted-foreground animate-pulse">Loading file…</div>}
+            {codeLoading && <div className="h-64 flex items-center justify-center text-xs text-muted-foreground animate-pulse">Loading file...</div>}
             {!codeLoading && codeFile && (
               editMode ? (
                 <textarea
@@ -346,7 +349,7 @@ export default function OrionOverview() {
       <div className="border rounded-lg bg-card">
         <div className="p-4 border-b">
           <h3 className="text-sm font-semibold">Model Registry</h3>
-          <p className="text-xs text-muted-foreground mt-1">Manage all trained models — deploy to activate churn scoring</p>
+          <p className="text-xs text-muted-foreground mt-1">Manage all trained promo uplift models — deploy to activate scoring</p>
         </div>
         {(!models || models.length === 0) ? (
           <p className="text-sm text-muted-foreground text-center py-10">No models yet. Train your first model in the Experiment Lab.</p>
@@ -355,22 +358,25 @@ export default function OrionOverview() {
             <table className="w-full text-xs">
               <thead className="bg-muted/50">
                 <tr>
-                  {["Name", "Algorithm", "Status", "Accuracy", "AUC", "F1", "Precision", "Recall", "Actions"].map(h => (
+                  {["Name", "Algorithm", "Status", "R²", "RMSE", "MAE", "Promo Cols", "Rows", "Actions"].map(h => (
                     <th key={h} className="text-left p-3 font-medium text-muted-foreground">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {models.map((m: any) => (
+                {models.map((m: any) => {
+                  const d = getPromoData(m);
+                  const r2val = d.r2 ?? m.auc;
+                  return (
                   <tr key={m.id} className="border-t hover:bg-muted/30 transition-colors" data-testid={`row-model-${m.id}`}>
                     <td className="p-3 font-medium max-w-[180px] truncate" title={m.name}>{m.name}</td>
                     <td className="p-3 text-muted-foreground">{m.algorithm}</td>
                     <td className="p-3"><StatusBadge status={m.isDeployed ? "Production" : m.status} /></td>
-                    <td className="p-3">{m.accuracy ? `${(m.accuracy * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="p-3 font-semibold text-blue-600">{m.auc ? `${(m.auc * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="p-3">{m.f1Score ? `${(m.f1Score * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="p-3">{m.precision ? `${(m.precision * 100).toFixed(1)}%` : "—"}</td>
-                    <td className="p-3">{m.recall ? `${(m.recall * 100).toFixed(1)}%` : "—"}</td>
+                    <td className="p-3 font-semibold text-blue-600">{r2val != null ? `${(r2val * 100).toFixed(1)}%` : "—"}</td>
+                    <td className="p-3">{d.rmse != null ? d.rmse.toFixed(4) : "—"}</td>
+                    <td className="p-3">{d.mae  != null ? d.mae.toFixed(4)  : "—"}</td>
+                    <td className="p-3">{d.promoColumns.length > 0 ? d.promoColumns.length : "—"}</td>
+                    <td className="p-3">{d.rowCount != null ? d.rowCount.toLocaleString() : "—"}</td>
                     <td className="p-3">
                       {m.isDeployed ? (
                         <Button size="sm" variant="outline" className="h-6 text-xs gap-1" data-testid={`button-undeploy-${m.id}`}
@@ -385,7 +391,8 @@ export default function OrionOverview() {
                       )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -394,3 +401,4 @@ export default function OrionOverview() {
     </OrionLayout>
   );
 }
+

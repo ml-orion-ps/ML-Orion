@@ -61,37 +61,43 @@ def orion_overview(db: Session = Depends(get_db)):
 
 @router.get("/risk-distribution")
 def risk_distribution(
-    model_id: int | None = Query(None),
+    model_id: int | None = Query(None, alias="modelId"),
     db: Session = Depends(get_db),
 ):
-    predictions = storage.get_predictions(db, model_id, use_case=USE_CASE)
-    if not predictions:
-        customers = storage.get_customers(db)
-        distribution = {"veryHigh": 0, "high": 0, "medium": 0, "low": 0}
-        for c in customers:
-            s = c.churn_risk_score or 0
-            if s >= 0.8:
-                distribution["veryHigh"] += 1
-            elif s >= 0.6:
-                distribution["high"] += 1
-            elif s >= 0.3:
-                distribution["medium"] += 1
-            else:
-                distribution["low"] += 1
-        return {"distribution": distribution, "source": "customers"}
+    models = storage.get_ml_models(db, use_case=USE_CASE)
+    if model_id:
+        models = [m for m in models if m.id == model_id]
 
     distribution = {"veryHigh": 0, "high": 0, "medium": 0, "low": 0}
-    for p in predictions:
-        cat = p.get("risk_category", "")
-        if cat == "very high":
-            distribution["veryHigh"] += 1
-        elif cat == "high":
-            distribution["high"] += 1
-        elif cat == "medium":
-            distribution["medium"] += 1
+    weighted_wmape_sum = 0.0
+    rows_with_wmape = 0
+
+    for m in models:
+        wmape = m.wmape
+        rows = m.row_count or 0
+        if wmape is None or rows == 0:
+            continue
+        if wmape >= 0.30:
+            distribution["veryHigh"] += rows
+        elif wmape >= 0.15:
+            distribution["high"] += rows
+        elif wmape >= 0.05:
+            distribution["medium"] += rows
         else:
-            distribution["low"] += 1
-    return {"distribution": distribution, "source": "predictions", "totalPredictions": len(predictions)}
+            distribution["low"] += rows
+        weighted_wmape_sum += wmape * rows
+        rows_with_wmape += rows
+
+    avg_wmape = round(weighted_wmape_sum / rows_with_wmape, 4) if rows_with_wmape > 0 else None
+    total_rows = sum(distribution.values())
+
+    return {
+        "distribution": distribution,
+        "avgWmape": avg_wmape,
+        "totalRows": total_rows,
+        "modelCount": len(models),
+        "source": "models",
+    }
 
 
 @router.get("/customer-dataset")

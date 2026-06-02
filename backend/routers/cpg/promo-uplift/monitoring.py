@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 import math
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 import storage
 
-router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
+router = APIRouter(prefix="/monitoring", tags=["monitoring"])
 
 MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]

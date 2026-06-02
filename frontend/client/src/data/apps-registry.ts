@@ -38,8 +38,8 @@ export const APPS: AppDef[] = [
     tagline: "SKU-Level Demand Prediction",
     description: "ML-powered demand forecasting across SKUs, stores, and time horizons to reduce stockouts and overstock.",
     industry: "Retail",
-    route: "/retail/demand-forecasting",
+    route: "/retail/demand_forecast",
     color: "orange",
-    status: "coming-soon",
+    status: "live",
   },
 ];

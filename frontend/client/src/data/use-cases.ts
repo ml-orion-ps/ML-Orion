@@ -62,7 +62,7 @@ export const INDUSTRIES: IndustryDef[] = [
     color: "#22c55e",
     accent: "green",
     useCases: [
-      
+
       {
         id: "baseline-prediction",
         name: "Baseline Prediction",
@@ -89,7 +89,7 @@ export const INDUSTRIES: IndustryDef[] = [
               { label: "SKUs Under Forecast", value: "42 of 380 reviewed" },
             ],
           },
-          ],
+        ],
         orionContext: {
           targetVariable: "demand_units",
           features: ["lag_4wk_demand", "lag_13wk_demand", "season_index", "promo_flag", "price", "distribution_pct", "new_sku_flag", "category_trend"],
@@ -99,10 +99,11 @@ export const INDUSTRIES: IndustryDef[] = [
       },
       {
         id: "price-promo",
-        name: "Price & Promo Optimization",
-        shortName: "RGM – Price & Promo",
-        description: "AI-driven price elasticity modeling and promotional lift prediction to maximize revenue and margin across channels.",
+        name: "Price Elasticity",
+        shortName: "Price Elasticity",
+        description: "ML-powered price elasticity modeling to quantify demand sensitivity, optimize price points, and maximize revenue across SKUs and channels.",
         tag: "RGM",
+        route: "/cpg/price-elasticity",
         kpis: [
           { label: "Revenue Uplift", value: "+8.3%", trend: "↑ vs prior quarter", up: true, color: "green" },
           { label: "Promo ROI", value: "3.2×", trend: "↑ 0.4× QoQ", up: true, color: "green" },
@@ -167,7 +168,42 @@ export const INDUSTRIES: IndustryDef[] = [
         },
       },
       {
-        id: "demand-forecasting",
+        id: "promo-uplift",
+        name: "Promo Uplift",
+        shortName: "CPG – Promo Uplift",
+        description: "Causal counterfactual uplift modeling to measure the true incremental effect of promotional mechanics (discount, display, feature, BOGO) on sales units.",
+        tag: "RGM",
+        isLive: true,
+        route: "/cpg/promo-uplift",
+        kpis: [
+          { label: "Avg Discount Uplift", value: "+14.2%", trend: "↑ 2.1pp QoQ", up: true, color: "green" },
+          { label: "Display Lift", value: "+9.7%", trend: "↑ vs prior period", up: true, color: "green" },
+          { label: "BOGO Uplift", value: "+22.5%", trend: "Highest mechanic", up: true, color: "blue" },
+          { label: "Feature Flag Lift", value: "+6.3%", trend: "↓ 0.8pp vs target", up: false, color: "amber" },
+        ],
+        businessTabs: [
+          {
+            label: "Uplift by Mechanic",
+            description: "Counterfactual uplift units per promotional mechanic",
+            chartType: "bar",
+            chartData: barData(["Discount", "Display", "Feature", "BOGO"], [14.2, 9.7, 6.3, 22.5], "uplift"),
+            insightRows: [
+              { label: "Best Mechanic", value: "BOGO – 22.5% avg uplift" },
+              { label: "Worst Mechanic", value: "Feature Flag – 6.3% avg uplift" },
+              { label: "SKUs with Uplift > 10%", value: "128 of 380 reviewed" },
+              { label: "Promo Columns Used", value: "discount_depth, display_flag, feature_flag, bogo_flag" },
+            ],
+          },
+        ],
+        orionContext: {
+          targetVariable: "sales_units",
+          features: ["price", "base_price", "discount_depth", "feature_flag", "display_flag", "bogo_flag", "seasonality_index", "holiday_flag", "COMP1_PRICE", "COMP2_PRICE"],
+          algorithms: ["Ridge Regression"],
+          edaHighlights: ["Promo mechanics show strong sales uplift", "BOGO has highest average lift", "Competitive pricing influences elasticity"],
+        },
+      },
+      {
+        id: "demand_forecast",
         name: "Demand Forecasting",
         shortName: "Demand Forecasting",
         description: "SKU-level demand prediction with seasonality decomposition to reduce stockouts and excess inventory.",
@@ -528,6 +564,8 @@ export const INDUSTRIES: IndustryDef[] = [
         shortName: "Retail Demand Forecast",
         description: "Store and item level demand forecasting to reduce stockouts and excess inventory across all channels.",
         tag: "Inventory",
+        route: "/retail/demand_forecast",
+        isLive: true,
         kpis: [
           { label: "Forecast Accuracy", value: "88.7%", trend: "↑ 1.4pp vs model v1", up: true, color: "green" },
           { label: "WMAPE", value: "8.1%", trend: "Target <10%", up: true, color: "green" },
@@ -590,6 +628,18 @@ export const INDUSTRIES: IndustryDef[] = [
           algorithms: ["XGBoost", "SARIMA", "LSTM", "Prophet"],
           edaHighlights: ["Strong weekly seasonality (7-day cycle)", "Weather has 0.42 correlation with seasonal demand", "Promo events inflate demand 2–4 weeks ahead"],
         },
+      },
+      {
+        id: "kpi-anomaly",
+        name: "KPI Anomaly Detection",
+        shortName: "KPI Anomaly",
+        description: "Automated anomaly detection across retail KPIs using Isolation Forest to surface outliers and flag performance deviations early.",
+        tag: "Analytics",
+        isLive: true,
+        route: "/retail/kpi-anomaly/orion/overview",
+        kpis: [],
+        businessTabs: [],
+        orionContext: { targetVariable: "anomaly_score", features: [], algorithms: ["Isolation Forest"], edaHighlights: [] },
       },
       {
         id: "basket-analysis",

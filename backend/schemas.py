@@ -118,11 +118,14 @@ class MlModelOut(_Base):
     approval_notes: Optional[str] = None
     wmape: Optional[float] = None
     mae: Optional[float] = None
+    mape: Optional[float] = None
     rmse: Optional[float] = None
     r2: Optional[float] = None
     promo_effect_units: Optional[float] = None
     baseline_units: Optional[float] = None
     residual_units: Optional[float] = None
+    forecastUnits: Optional[float] = None
+    actualUnits: Optional[float] = None
     row_count: Optional[int] = None
 
 

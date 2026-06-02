@@ -588,13 +588,12 @@ def add_custom_feature(dataset_id: int, body: dict, db: Session = Depends(get_db
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    feature_report = ds.feature_report or {}
-    if not isinstance(feature_report, dict):
-        feature_report = {}
+    feature_report = dict(ds.feature_report) if isinstance(ds.feature_report, dict) else {}
 
     existing = feature_report.get("customFeatures", [])
     if not isinstance(existing, list):
         existing = []
+    existing = list(existing)
 
     new_feature = body.get("feature", body)
     if not new_feature.get("id"):
@@ -622,10 +621,11 @@ def delete_custom_feature(dataset_id: int, feature_id: str, db: Session = Depend
     if not ds:
         raise HTTPException(status_code=404, detail="Dataset not found")
 
-    feature_report = ds.feature_report or {}
-    if not isinstance(feature_report, dict):
-        feature_report = {}
+    feature_report = dict(ds.feature_report) if isinstance(ds.feature_report, dict) else {}
     existing = feature_report.get("customFeatures", [])
+    if not isinstance(existing, list):
+        existing = []
+    existing = list(existing)
     feature_report["customFeatures"] = [f for f in existing if f.get("id") != feature_id]
 
     ds_updated = storage.update_dataset(db, dataset_id, {"feature_report": feature_report})

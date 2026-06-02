@@ -24,6 +24,7 @@ const ACTION_COLOR: Record<string, string> = {
 };
 
 const CPG_BASE = "/cpg/baseline-modelling/orion";
+const API_BASE = "/api/cpg/baseline_modelling";
 
 export default function OrionGovernancePage() {
   const qc = useQueryClient();
@@ -31,7 +32,7 @@ export default function OrionGovernancePage() {
   const [tab, setTab] = useState<"registry" | "audit" | "compliance">("registry");
   const [auditFilter, setAuditFilter] = useState<string>("all");
 
-  const { data: gov, isLoading } = useQuery<any>({ queryKey: ["/api/cpg/orion/governance"] });
+  const { data: gov, isLoading } = useQuery<any>({ queryKey: [`${API_BASE}/orion/governance`] });
 
   const registry: any[] = gov?.registry ?? [];
   const auditEntries: any[] = gov?.auditLog ?? [];
@@ -46,30 +47,30 @@ export default function OrionGovernancePage() {
 
   const approveMut = useMutation({
     mutationFn: (id: number) =>
-      apiRequest("POST", `/api/cpg/models/${id}/approve`, { approvedBy: "governance-user", notes: "Approved via governance page" }),
+      apiRequest("POST", `${API_BASE}/models/${id}/approve`, { approvedBy: "governance-user", notes: "Approved via governance page" }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/governance"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/orion/governance`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/models`] });
       toast({ title: "Model approved" });
     },
   });
 
   const deployMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/models/${id}/deploy`),
+    mutationFn: (id: number) => apiRequest("POST", `${API_BASE}/models/${id}/deploy`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/governance"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/orion/governance`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/models`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/orion/overview`] });
       toast({ title: "Model deployed" });
     },
   });
 
   const undeployMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/models/${id}/undeploy`),
+    mutationFn: (id: number) => apiRequest("POST", `${API_BASE}/models/${id}/undeploy`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/governance"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/orion/governance`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/models`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/orion/overview`] });
       toast({ title: "Model undeployed" });
     },
   });

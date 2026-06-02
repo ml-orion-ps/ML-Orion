@@ -5,12 +5,14 @@ from database import get_db
 import storage
 from services.custom_features import get_dataset_rows
 
-router = APIRouter(prefix="/api/orion", tags=["orion"])
+router = APIRouter(prefix="/orion", tags=["orion"])
+
+USE_CASE = "cpg_trade_promo_optimization"
 
 
 @router.get("/overview")
 def orion_overview(db: Session = Depends(get_db)):
-    models = storage.get_ml_models(db)
+    models = storage.get_ml_models(db, use_case=USE_CASE)
     datasets = storage.get_datasets(db)
     customers = storage.get_customers(db)
     predictions = storage.get_predictions(db)
@@ -137,7 +139,7 @@ def customer_dataset(db: Session = Depends(get_db)):
 
 @router.get("/governance")
 def governance(db: Session = Depends(get_db)):
-    models = storage.get_ml_models(db)
+    models = storage.get_ml_models(db, use_case=USE_CASE)
     audit = storage.get_audit_log(db, 100)
 
     approved = [m for m in models if m.approval_status == "approved"]

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useLocation, Link } from "wouter";
 import {
   LayoutDashboard, TrendingDown, Brain, Target, Upload, ClipboardCheck,
-  BarChart3, GitBranch, Cpu, Rocket, ChevronDown, Activity, Search,
+  BarChart3, GitBranch, Cpu, Rocket, ChevronDown, ChevronLeft, Activity, Search,
   AlertTriangle, Shield, Users, Zap, DollarSign, PieChart, ArrowRightLeft,
   Globe, Wifi, LineChart, Layers, Eye, Crosshair, BriefcaseBusiness,
   Database, FlaskConical, PackageCheck, MonitorDot, Bot, AreaChart,
@@ -12,7 +12,7 @@ import {
 import {
   Sidebar, SidebarContent, SidebarGroup, SidebarGroupContent,
   SidebarGroupLabel, SidebarMenu, SidebarMenuButton, SidebarMenuItem,
-  SidebarHeader, SidebarFooter
+  SidebarHeader, SidebarFooter, useSidebar
 } from "@/components/ui/sidebar";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { getIndustry, getUseCase } from "@/data/use-cases";
@@ -55,6 +55,37 @@ const orionItems = [
   { title: "Deployment & Scoring", url: "/tmt/customer-churn/orion/deploy", icon: Rocket },
   { title: "Outcomes & Recommendations", url: "/tmt/customer-churn/orion/outcomes", icon: TrendingUp },
   { title: "Governance & Audit", url: "/tmt/customer-churn/orion/governance", icon: Gavel },
+];
+
+const retailDemandDiagnosticsItems = [
+  { title: "Forecast Trends", url: "/retail/demand_forecast/churn-diagnostics/patterns", icon: LineChart },
+  { title: "Category Segments", url: "/retail/demand_forecast/churn-diagnostics/segments", icon: Layers },
+  { title: "Driver Analysis", url: "/retail/demand_forecast/churn-diagnostics/drivers", icon: Activity },
+  { title: "Financial Impact", url: "/retail/demand_forecast/churn-diagnostics/financial", icon: DollarSign },
+];
+
+const retailDemandRiskItems = [
+  { title: "Stock Risk Overview", url: "/retail/demand_forecast/risk-intelligence/overview", icon: Shield },
+  { title: "Store Risk Explorer", url: "/retail/demand_forecast/risk-intelligence/explorer", icon: Search },
+  { title: "Stockout Signals", url: "/retail/demand_forecast/risk-intelligence/warnings", icon: AlertTriangle },
+];
+
+const retailDemandRetentionItems = [
+  { title: "Replenishment Actions", url: "/retail/demand_forecast/retention/actions", icon: Target },
+  { title: "Order Queue", url: "/retail/demand_forecast/retention/queue", icon: Zap },
+  { title: "Execution Tracker", url: "/retail/demand_forecast/retention/tracker", icon: Eye },
+];
+
+const retailDemandBusinessItems = [
+  { title: "Revenue Impact", url: "/retail/demand_forecast/business-impact/revenue", icon: DollarSign },
+  { title: "Markdown Analysis", url: "/retail/demand_forecast/business-impact/roi", icon: PieChart },
+  { title: "Inventory Economics", url: "/retail/demand_forecast/business-impact/migration", icon: ArrowRightLeft },
+];
+
+const retailDemandStrategyItems = [
+  { title: "Market Trends", url: "/retail/demand_forecast/strategy/competitive", icon: Globe },
+  { title: "Seasonal Planning", url: "/retail/demand_forecast/strategy/network", icon: Wifi },
+  { title: "Channel Intelligence", url: "/retail/demand_forecast/strategy/migration", icon: ArrowRightLeft },
 ];
 
 interface NavItem {
@@ -181,10 +212,13 @@ function DemoNav({ industryId, useCaseId, location }: { industryId: string; useC
 const businessUrls = [
   ...churnDiagnosticsItems, ...riskIntelligenceItems, ...retentionItems,
   ...businessImpactItems, ...strategyItems,
+  ...retailDemandDiagnosticsItems, ...retailDemandRiskItems, ...retailDemandRetentionItems,
+  ...retailDemandBusinessItems, ...retailDemandStrategyItems,
 ].map(i => i.url);
 
 export function AppSidebar() {
   const [location] = useLocation();
+  const { toggleSidebar, state } = useSidebar();
 
   // Detect demo pages
   const demoMatch = location.match(/^\/demo\/([^/]+)\/([^/]+)/);
@@ -193,25 +227,38 @@ export function AppSidebar() {
   const demoUseCaseId = demoMatch?.[2] ?? "";
 
   const isBusinessActive = businessUrls.some(u => location === u || location.startsWith(u + "/"));
-  const [businessOpen, setBusinessOpen] = useState(isBusinessActive || location === "/tmt/customer-churn");
-  const isCpgPage = location.startsWith("/cpg/baseline-modelling");
+  const isRetailDemandPage = location.startsWith("/retail/demand_forecast");
+  const [businessOpen, setBusinessOpen] = useState(isBusinessActive || location === "/tmt/customer-churn" || location === "/retail/demand_forecast");
+  const isBaselinePage = location.startsWith("/cpg/baseline-modelling");
+  const isPromoUpliftPage = location.startsWith("/cpg/promo-uplift");
+  const isKpiAnomalyPage = location.startsWith("/retail/kpi-anomaly");
+  const isPricePage = location.startsWith("/cpg/price-elasticity");
   const demoUseCase = isDemoPage ? getUseCase(demoIndustryId, demoUseCaseId) : null;
 
   return (
     <Sidebar>
       <SidebarHeader className="p-4">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ backgroundColor: "#FFD822" }}>
-            <Zap className="w-4 h-4 text-black" />
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <div className="w-8 h-8 rounded-md flex items-center justify-center" style={{ backgroundColor: "#FFD822" }}>
+              <Zap className="w-4 h-4 text-black" />
+            </div>
+            <div>
+              <h2 className="text-sm font-bold leading-tight tracking-wide">ML Orion</h2>
+              {isDemoPage && demoUseCase ? (
+                <p className="text-[10px] text-muted-foreground truncate max-w-[120px]">{demoUseCase.shortName}</p>
+              ) : (
+                <p className="text-xs text-muted-foreground">Decision Intelligence</p>
+              )}
+            </div>
           </div>
-          <div>
-            <h2 className="text-sm font-bold leading-tight tracking-wide">ML Orion</h2>
-            {isDemoPage && demoUseCase ? (
-              <p className="text-[10px] text-muted-foreground truncate max-w-[120px]">{demoUseCase.shortName}</p>
-            ) : (
-              <p className="text-xs text-muted-foreground">Decision Intelligence</p>
-            )}
-          </div>
+          <button
+            onClick={toggleSidebar}
+            title={state === "expanded" ? "Collapse sidebar" : "Expand sidebar"}
+            className="p-1 rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+          >
+            <ChevronLeft className={`w-4 h-4 transition-transform duration-200 ${state === "collapsed" ? "rotate-180" : ""}`} />
+          </button>
         </div>
       </SidebarHeader>
 
@@ -219,9 +266,45 @@ export function AppSidebar() {
         {isDemoPage ? (
           /* ── DEMO USE CASE NAV ── */
           <DemoNav industryId={demoIndustryId} useCaseId={demoUseCaseId} location={location} />
-        ) : (
-          /* ── CUSTOMER CHURN NAV ── */
-          <>
+        ) : isPromoUpliftPage ? (
+          /* ── PROMO UPLIFT NAV ── */
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild data-active={location === "/"} data-testid="nav-platform-center">
+                    <Link href="/"><LayoutGrid className="w-4 h-4" /><span>Platform Center</span></Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild data-active={location === "/cpg/promo-uplift"} data-testid="nav-command-center">
+                    <Link href="/cpg/promo-uplift"><LayoutDashboard className="w-4 h-4" /><span>Command Center</span></Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : isKpiAnomalyPage ? (
+          /* ── KPI ANOMALY NAV ── */
+          <SidebarGroup>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild data-active={location === "/"} data-testid="nav-platform-center">
+                    <Link href="/"><LayoutGrid className="w-4 h-4" /><span>Platform Center</span></Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild data-active={location === "/retail/kpi-anomaly/orion/overview"} data-testid="nav-command-center">
+                    <Link href="/retail/kpi-anomaly/orion/overview"><LayoutDashboard className="w-4 h-4" /><span>Command Center</span></Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )
+          : isBaselinePage ? (
+            /* ── Baseline NAV ── */
             <SidebarGroup>
               <SidebarGroupContent>
                 <SidebarMenu>
@@ -231,53 +314,128 @@ export function AppSidebar() {
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                   <SidebarMenuItem>
-                    <SidebarMenuButton asChild data-active={location === "/tmt/customer-churn"} data-testid="nav-command-center">
-                      <Link href="/tmt/customer-churn"><LayoutDashboard className="w-4 h-4" /><span>Command Center</span></Link>
+                    <SidebarMenuButton asChild data-active={location === "/cpg/baseline-modelling"} data-testid="nav-command-center">
+                      <Link href="/cpg/baseline-modelling"><LayoutDashboard className="w-4 h-4" /><span>Command Center</span></Link>
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
+          ) : isRetailDemandPage ? (
+            /* ── RETAIL DEMAND FORECASTING NAV ── */
+            <>
+              <SidebarGroup>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild data-active={location === "/"} data-testid="nav-platform-center">
+                        <Link href="/"><LayoutGrid className="w-4 h-4" /><span>Platform Center</span></Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild data-active={location === "/retail/demand_forecast"} data-testid="nav-retail-demand-center">
+                        <Link href="/retail/demand_forecast"><LayoutDashboard className="w-4 h-4" /><span>Command Center</span></Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
 
-            <div className="px-2 pt-1">
-              <button
-                onClick={() => setBusinessOpen(o => !o)}
-                data-testid="toggle-business-section"
-                className="flex items-center justify-between w-full px-2 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
-              >
-                <div className="flex items-center gap-1.5">
-                  <BarChart3 className="w-3.5 h-3.5" />
-                  <span>Business Analytics</span>
-                </div>
-                <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${businessOpen ? "" : "-rotate-90"}`} />
-              </button>
-            </div>
+              <div className="px-2 pt-1">
+                <button
+                  onClick={() => setBusinessOpen(o => !o)}
+                  data-testid="toggle-business-section"
+                  className="flex items-center justify-between w-full px-2 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    <span>Business Analytics</span>
+                  </div>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${businessOpen ? "" : "-rotate-90"}`} />
+                </button>
+              </div>
 
-            {businessOpen && (
-              <>
-                <NavGroup label="Churn Diagnostics" items={churnDiagnosticsItems} location={location} defaultOpen={false} />
-                <NavGroup label="Customer Risk Intelligence" items={riskIntelligenceItems} location={location} defaultOpen={false} />
-                <NavGroup label="Retention Action Center" items={retentionItems} location={location} defaultOpen={false} />
-                <NavGroup label="Business Impact" items={businessImpactItems} location={location} defaultOpen={false} />
-                <NavGroup label="Strategy Insights" items={strategyItems} location={location} defaultOpen={false} />
-              </>
-            )}
-          </>
-        )}
+              {businessOpen && (
+                <>
+                  <NavGroup label="Forecast Performance" items={retailDemandDiagnosticsItems} location={location} defaultOpen={false} />
+                  <NavGroup label="Store Clusters" items={retailDemandRiskItems} location={location} defaultOpen={false} />
+                  <NavGroup label="Category Outlook" items={retailDemandRetentionItems} location={location} defaultOpen={false} />
+                  <NavGroup label="Markdown Planning" items={retailDemandBusinessItems} location={location} defaultOpen={false} />
+                  <NavGroup label="Strategy Insights" items={retailDemandStrategyItems} location={location} defaultOpen={false} />
+                </>
+              )}
+            </>
+          ) : (
+            /* ── CUSTOMER CHURN NAV ── */
+            <>
+              <SidebarGroup>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild data-active={location === "/"} data-testid="nav-platform-center">
+                        <Link href="/"><LayoutGrid className="w-4 h-4" /><span>Platform Center</span></Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                    <SidebarMenuItem>
+                      <SidebarMenuButton asChild data-active={location === "/tmt/customer-churn"} data-testid="nav-command-center">
+                        <Link href="/tmt/customer-churn"><LayoutDashboard className="w-4 h-4" /><span>Command Center</span></Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+
+              <div className="px-2 pt-1">
+                <button
+                  onClick={() => setBusinessOpen(o => !o)}
+                  data-testid="toggle-business-section"
+                  className="flex items-center justify-between w-full px-2 py-1.5 rounded-md text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+                >
+                  <div className="flex items-center gap-1.5">
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    <span>Business Analytics</span>
+                  </div>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${businessOpen ? "" : "-rotate-90"}`} />
+                </button>
+              </div>
+
+              {businessOpen && (
+                <>
+                  <NavGroup label="Churn Diagnostics" items={churnDiagnosticsItems} location={location} defaultOpen={false} />
+                  <NavGroup label="Customer Risk Intelligence" items={riskIntelligenceItems} location={location} defaultOpen={false} />
+                  <NavGroup label="Retention Action Center" items={retentionItems} location={location} defaultOpen={false} />
+                  <NavGroup label="Business Impact" items={businessImpactItems} location={location} defaultOpen={false} />
+                  <NavGroup label="Strategy Insights" items={strategyItems} location={location} defaultOpen={false} />
+                </>
+              )}
+            </>
+          )}
 
         {/* ── ML ORION — always visible ── */}
         {(() => {
           const orionBase = isDemoPage
             ? `/demo/${demoIndustryId}/${demoUseCaseId}/orion`
-            : isCpgPage
-            ? `/cpg/baseline-modelling/orion`
-            : `/tmt/customer-churn/orion`;
+            : isRetailDemandPage
+              ? `/retail/demand_forecast/orion`
+              : isPromoUpliftPage
+                ? `/cpg/promo-uplift/orion`
+                : isKpiAnomalyPage
+                  ? `/retail/kpi-anomaly/orion`
+                  : isPricePage
+                    ? `/cpg/price-elasticity/orion`
+                    : isBaselinePage
+                      ? `/cpg/baseline-modelling/orion`
+                      : `/tmt/customer-churn/orion`;
           const resolvedOrionItems = orionItems.map(item => ({
             ...item,
             url: `${orionBase}/${item.url.replace("/tmt/customer-churn/orion/", "")}`,
           }));
           const isOrionActive = location.startsWith("/tmt/customer-churn/orion/")
             || location.startsWith("/cpg/baseline-modelling/orion/")
+            || location.startsWith("/cpg/promo-uplift/orion/")
+            || location.startsWith("/cpg/price-elasticity/orion/")
+            || location.startsWith("/retail/demand_forecast/orion/")
+            || location.startsWith("/retail/kpi-anomaly/orion/")
             || location.includes("/orion/");
           return (
             <Collapsible defaultOpen={isOrionActive}>

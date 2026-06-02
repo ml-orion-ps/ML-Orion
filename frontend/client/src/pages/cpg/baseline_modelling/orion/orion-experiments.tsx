@@ -40,6 +40,8 @@ type ModelType = {
   precision: number; recall: number; f1Score: number; auc: number; isDeployed: boolean;
   featureImportance: any[]; confusionMatrix: any; hyperparameters: any; trainedAt: string;
   modelWeights?: any;
+  mae?: number; rmse?: number; r2?: number; wmape?: number;
+  baselineUnits?: number; promoEffectUnits?: number; residualUnits?: number;
 };
 
 type BaselinePredictionResult = {
@@ -66,6 +68,24 @@ const asPercent = (v: any) => (v != null ? `${(Number(v) * 100).toFixed(1)}%` : 
 const asFraction = (v: any) => (v != null ? Number(v).toFixed(3) : "—");
 const asLift = (v: any) => (v != null ? `${Number(v).toFixed(2)}x` : "—");
 const asNumber = (v: any) => (v != null ? Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 }) : "â€”");
+const cleanModelName = (value: any) => {
+  if (!value) return null;
+  const text = String(value).trim();
+  const autoMatch = text.match(/^Auto\s*\((.+)\)$/i);
+  return autoMatch?.[1] || text;
+};
+const getRunBestModel = (run: any) =>
+  cleanModelName(run.bestModel) ||
+  cleanModelName(run.modelWeights?.bestModel) ||
+  cleanModelName(run.modelWeights?.summary?.bestModel) ||
+  cleanModelName(run.algorithm) ||
+  "—";
+const getRunBaselineUnits = (run: any) =>
+  run.baselineUnits ?? run.modelWeights?.totals?.baselineWithoutPromoUnits ?? run.modelWeights?.predictionTotals?.baselineWithoutPromoUnits;
+const getRunPromoUnits = (run: any) =>
+  run.promoEffectUnits ?? run.promoUnits ?? run.modelWeights?.totals?.promoEffectUnits ?? run.modelWeights?.predictionTotals?.promoEffectUnits;
+const getRunResidualUnits = (run: any) =>
+  run.residualUnits ?? run.modelWeights?.totals?.residualUnits ?? run.modelWeights?.predictionTotals?.residualUnits;
 const getOosMetric = (m: ModelType, key: string) => {
   const oos = (m.modelWeights as any)?.oosMetrics;
   if (oos && oos[key] != null) return oos[key];
@@ -105,24 +125,41 @@ export default function OrionExperiments() {
   const [svmKernel, setSvmKernel] = useState("rbf");
   const [fiSelectedModelId, setFiSelectedModelId] = useState<number | null>(null);
 
-  const { data: models = [] } = useQuery<ModelType[]>({ queryKey: ["/api/cpg/models"] });
-  const { data: datasets = [] } = useQuery<any[]>({ queryKey: ["/api/cpg/datasets"] });
-  const { data: customerDs } = useQuery<any>({ queryKey: ["/api/cpg/orion/customer-dataset"] });
-  const { data: dynamicAlgos = [] } = useQuery<any[]>({ queryKey: ["/api/cpg/orion/algorithms"] });
+  // const { data: models = [] } = useQuery<ModelType[]>({ queryKey: [`${API_BASE}/models`] });
+  // const { data: datasets = [] } = useQuery<any[]>({ queryKey: [`${API_BASE}/datasets`] });
+  // const { data: customerDs } = useQuery<any>({ queryKey: ["/api/cpg/orion/customer-dataset"] });
+  // const { data: dynamicAlgos = [] } = useQuery<any[]>({ queryKey: ["/api/cpg/orion/algorithms"] });
+  const API_BASE = "/api/cpg/baseline_modelling";
+
+  const { data: models = [] } = useQuery<ModelType[]>({
+    queryKey: [`${API_BASE}/models`],
+  });
+
+  const { data: datasets = [] } = useQuery<any[]>({
+    queryKey: [`${API_BASE}/datasets`],
+  });
+
+  const { data: customerDs } = useQuery<any>({
+    queryKey: [`${API_BASE}/orion/customer-dataset`],
+  });
+
+  const { data: dynamicAlgos = [] } = useQuery<any[]>({
+    queryKey: [`${API_BASE}/orion/algorithms`],
+  });
 
   const ALGORITHMS = dynamicAlgos.length > 0 ? dynamicAlgos : FALLBACK_ALGORITHMS;
-  const ALGORITHMS_BASELINE = dynamicAlgos.length > 0 ? dynamicAlgos : FALLBACK_ALGORITHMS_BASELINE;
+  const ALGORITHMS_BASELINE = FALLBACK_ALGORITHMS_BASELINE;
 
   // Parse JSON properly in both mutations
   const trainFromDatasetMut = useMutation({
     mutationFn: async (body: any) => {
-      const res = await apiRequest("POST", "/api/cpg/models/train", body);
+      const res = await apiRequest("POST", `${API_BASE}/models/train`, body);
       return res.json();
     },
     onSuccess: (m: ModelType) => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/predictions"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/models`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/orion/overview`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/predictions`] });
       qc.invalidateQueries({ queryKey: ["/api/cpg/analytics/retention"] });
       qc.invalidateQueries({ queryKey: ["/api/cpg/recommendations"] });
       setSelectedModel(m);
@@ -134,13 +171,13 @@ export default function OrionExperiments() {
 
   const trainLiveMut = useMutation({
     mutationFn: async (body: any) => {
-      const res = await apiRequest("POST", "/api/cpg/models/train-live", body);
+      const res = await apiRequest("POST", `${API_BASE}/models/train-live`, body);
       return res.json();
     },
     onSuccess: (m: ModelType) => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/predictions"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/models`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/orion/overview`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/predictions`] });
       qc.invalidateQueries({ queryKey: ["/api/cpg/analytics/retention"] });
       qc.invalidateQueries({ queryKey: ["/api/cpg/recommendations"] });
       setSelectedModel(m);
@@ -152,13 +189,13 @@ export default function OrionExperiments() {
 
   const baselinePredictionMut = useMutation({
     mutationFn: async ({ datasetId, modelsToRun }: { datasetId: number; modelsToRun: string[] }) => {
-      const res = await apiRequest("POST", `/api/cpg/datasets/${datasetId}/baseline-prediction`, { modelsToRun });
+      const res = await apiRequest("POST", `${API_BASE}/datasets/${datasetId}/baseline-prediction`, { modelsToRun });
       return res.json();
     },
     onSuccess: (result: BaselinePredictionResult) => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/datasets"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/datasets`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/models`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/orion/overview`] });
       setBaselineResult(result);
       setSelectedModel(null);
       toast({
@@ -171,11 +208,11 @@ export default function OrionExperiments() {
 
   const deployMut = useMutation({
     mutationFn: async (id: number) => {
-      const res = await apiRequest("POST", `/api/cpg/models/${id}/deploy`);
+      const res = await apiRequest("POST", `${API_BASE}/models/${id}/deploy`);
       return res.json();
     },
     onSuccess: (m: ModelType) => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/models`] });
       setSelectedModel(prev => prev?.id === m.id ? { ...prev, isDeployed: true, status: "deployed" } : prev);
       toast({
         title: "Model deployed!",
@@ -187,13 +224,13 @@ export default function OrionExperiments() {
 
   const deleteMut = useMutation({
     mutationFn: async (id: number) => {
-      const res = await apiRequest("DELETE", `/api/cpg/models/${id}`);
+      const res = await apiRequest("DELETE", `${API_BASE}/models/${id}`);
       return res.json();
     },
     onSuccess: (_: any, id: number) => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/predictions"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/models`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/predictions`] });
+      qc.invalidateQueries({ queryKey: [`${API_BASE}/orion/overview`] });
       if (selectedModel?.id === id) setSelectedModel(null);
       setDeleteTargetId(null);
       toast({ title: "Model deleted", description: "The model and all its predictions have been removed." });
@@ -281,16 +318,25 @@ export default function OrionExperiments() {
   ] : [];
 
   const last8Models = (models as ModelType[]).slice(-8);
-  const baselineRuns = models as any[];
-  const last8BaselineRuns = baselineRuns.slice(-8);
+  const baselineRuns = [...(models as any[])].sort((a, b) => {
+    const aTime = a.trainedAt ? new Date(a.trainedAt).getTime() : 0;
+    const bTime = b.trainedAt ? new Date(b.trainedAt).getTime() : 0;
+    return bTime - aTime;
+  });
+  const last8BaselineRuns = baselineRuns.slice(0, 8).reverse();
   const bestBaselineRun = baselineRuns.length > 0
-    ? baselineRuns.reduce((b: any, r: any) => ((r.r2 ?? -Infinity) > (b.r2 ?? -Infinity) ? r : b))
+    ? baselineRuns.reduce((b, r) => {
+        const rScore = r.rmse != null ? Number(r.rmse) : Infinity;
+        const bScore = b.rmse != null ? Number(b.rmse) : Infinity;
+        return rScore < bScore ? r : b;
+      })
     : null;
-  const baselineRunChartKeys = last8BaselineRuns.map((r: any, i: number) => `#${i + 1} ${r.algorithm}`);
-  const baselineComparisonData = last8BaselineRuns.map((r: any, i: number) => ({
+  const baselineRunChartKeys = last8BaselineRuns.map((r) => `#${baselineRuns.indexOf(r) + 1} ${getRunBestModel(r)}`);
+  const baselineComparisonData = last8BaselineRuns.map((r, i) => ({
     name: baselineRunChartKeys[i],
     rmse: r.rmse != null ? Number(r.rmse) : 0,
   }));
+  const maxBaselineRmse = Math.max(...baselineComparisonData.map((r) => r.rmse), 1);
 
   const MODEL_COLORS = ["#3b82f6", "#8b5cf6", "#10b981", "#f59e0b", "#ef4444", "#06b6d4", "#ec4899", "#84cc16"];
 
@@ -337,7 +383,7 @@ export default function OrionExperiments() {
 
   return (
     <OrionLayout title="Experiment Lab" subtitle="Run RGM baseline prediction experiments">
-      <div className="mb-4"><OrionNav current="/orion/experiments" /></div>
+      <div className="mb-4"><OrionNav current="/cpg/baseline-modelling/orion/experiments" basePath="/cpg/baseline-modelling/orion" /></div>
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
         {/* ── LEFT: Train Panel ── */}
         <div className="lg:col-span-2 space-y-4">
@@ -497,7 +543,19 @@ export default function OrionExperiments() {
               {experimentType === "baseline" && (
               <div>
                 <Label className="text-xs font-medium">Algorithm</Label>
-                <Select value={algorithm} onValueChange={setAlgorithm}>
+                <Select
+                  value={algorithm}
+                  onValueChange={(value) => {
+                    setAlgorithm(value);
+                    const modelMap: Record<string, string[]> = {
+                      Auto: ["Ridge", "RF", "XGB"],
+                      "Random Forest": ["RF"],
+                      XGBoost: ["XGB"],
+                      "Ridge Regression": ["Ridge"],
+                    };
+                    setBaselineModels(modelMap[value] || ["Ridge", "RF", "XGB"]);
+                  }}
+                >
                   <SelectTrigger className="mt-1 h-8 text-xs" data-testid="select-algorithm">
                     <SelectValue />
                   </SelectTrigger>
@@ -732,7 +790,7 @@ export default function OrionExperiments() {
                   variant="outline"
                   className="w-full gap-2 text-xs"
                   size="sm"
-                  onClick={() => navigate("/orion/deploy")}
+                  onClick={() => navigate("/cpg/baseline-modelling/orion/deploy")}
                   data-testid="button-goto-deploy"
                 >
                   <Zap className="w-3.5 h-3.5" />
@@ -750,7 +808,7 @@ export default function OrionExperiments() {
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             <KpiCard label="Experiments" value={baselineRuns.length} />
             <KpiCard label="Best RMSE" value={bestBaselineRun?.rmse != null ? Number(bestBaselineRun.rmse).toFixed(3) : "—"} />
-            <KpiCard label="Best Model" value={bestBaselineRun?.algorithm ?? "—"} />
+            <KpiCard label="Best Model" value={bestBaselineRun ? getRunBestModel(bestBaselineRun) : "—"} />
              <KpiCard label="Deployed" value={(models as ModelType[]).filter(m => m.isDeployed).length} />
           </div>
 
@@ -770,7 +828,7 @@ export default function OrionExperiments() {
                 <BarChart data={baselineComparisonData} margin={{ left: -10 }}>
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} />
 
-                  <YAxis domain={[0, 1]} tick={{ fontSize: 10 }} />
+                  <YAxis domain={[0, Math.ceil(maxBaselineRmse)]} tick={{ fontSize: 10 }} />
 
                   <Tooltip
                     formatter={(v: any) => [Number(v).toFixed(3), "rmse"]}
@@ -778,14 +836,11 @@ export default function OrionExperiments() {
 
                   <Legend wrapperStyle={{ fontSize: 10 }} />
 
-                  {last8BaselineRuns.map((_, i) => (
-                    <Bar
-                      key={baselineRunChartKeys[i]}
-                      dataKey="rmse"
-                      fill={MODEL_COLORS[i % MODEL_COLORS.length]}
-                      radius={[2, 2, 0, 0]}
-                    />
-                  )).slice(0, 1)}
+                  <Bar dataKey="rmse" radius={[2, 2, 0, 0]}>
+                    {baselineComparisonData.map((_, i) => (
+                      <Cell key={baselineRunChartKeys[i]} fill={MODEL_COLORS[i % MODEL_COLORS.length]} />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             )}
@@ -920,7 +975,7 @@ export default function OrionExperiments() {
                   </td>
 
                   <td className="p-3 whitespace-nowrap font-semibold">
-                    {run.algorithm}
+                    {getRunBestModel(run)}
                   </td>
 
                   <td className="p-3 font-semibold text-blue-600 font-mono">
@@ -932,23 +987,25 @@ export default function OrionExperiments() {
                   </td>
 
                   <td className="p-3 font-mono">
-                    {run.r2 != null ? Number(run.r2).toFixed(3) : "—"}
+                    {run.r2 != null
+                      ? Number(run.r2).toFixed(3)
+                      : "—"}
                   </td>
 
                   <td className="p-3 font-mono">
-                    {asNumber(run.baselineUnits)}
+                    {asNumber(getRunBaselineUnits(run))}
                   </td>
 
                   <td className="p-3 font-mono">
-                    {asNumber(run.promoEffectUnits)}
+                    {asNumber(getRunPromoUnits(run))}
                   </td>
 
                   <td className="p-3 font-mono">
-                    {asNumber(run.residualUnits)}
+                    {asNumber(getRunResidualUnits(run))}
                   </td>
 
                   <td className="p-3">
-                    <StatusBadge status={run.isDeployed ? "Production" : run.status} />
+                    <StatusBadge status={run.status} />
                   </td>
 
                   <td className="p-3">
@@ -957,7 +1014,7 @@ export default function OrionExperiments() {
                         size="sm"
                         variant="outline"
                         className="h-6 text-[10px] gap-1 px-2 text-red-600 hover:bg-red-50 border-red-200"
-                        onClick={() => deleteMut.mutate(run.id)}
+                        onClick={() => setDeleteTargetId(run.id)}
                       >
                         <Trash2 className="w-3 h-3" />
                       </Button>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { apiRequest } from "@/lib/queryClient";
 import { OrionLayout, KpiCard, StatusBadge, OrionNav } from "@/components/orion-layout";
@@ -18,6 +18,12 @@ import {
 } from "recharts";
 
 const CPG_BASE = "/cpg/baseline-modelling/orion";
+const API_BASE = "/api/cpg/baseline_modelling";
+const MODELS_API = `${API_BASE}/models`;
+const DATASETS_API = `${API_BASE}/datasets`;
+const ORION_API = `${API_BASE}/orion`;
+const PREDICTIONS_API = `${API_BASE}/predictions/predictions`;
+const MONITORING_API = `${API_BASE}/api/monitoring`;
 
 const CHART_COLORS = {
   r2: "#22c55e", wmape: "#f97316", mae: "#3b82f6",
@@ -130,9 +136,9 @@ export default function OrionDeployPage() {
   const [monitorTab, setMonitorTab] = useState<"health" | "trends" | "drivers" | "insights">("health");
   const [prodDatasetId, setProdDatasetId] = useState<number | null>(null);
 
-  const { data: modelsRaw = [] } = useQuery<any[]>({ queryKey: ["/api/cpg/models"] });
-  const { data: predictions = [] } = useQuery<any[]>({ queryKey: ["/api/cpg/predictions"] });
-  const { data: allDatasets = [] } = useQuery<any[]>({ queryKey: ["/api/cpg/datasets"] });
+  const { data: modelsRaw = [] } = useQuery<any[]>({ queryKey: [MODELS_API] });
+  const { data: predictions = [] } = useQuery<any[]>({ queryKey: [PREDICTIONS_API] });
+  const { data: allDatasets = [] } = useQuery<any[]>({ queryKey: [DATASETS_API] });
 
   const models = modelsRaw as any[];
   const deployedModels = models.filter(m => m.isDeployed);
@@ -141,12 +147,12 @@ export default function OrionDeployPage() {
   const activeMonitorId = monitorModelId ?? deployedModels[0]?.id ?? null;
 
   const { data: monitoringData, isLoading: monitorLoading } = useQuery<any>({
-    queryKey: ["/api/monitoring", activeMonitorId, prodDatasetId],
+    queryKey: [MONITORING_API, activeMonitorId, prodDatasetId],
     enabled: !!activeMonitorId,
     queryFn: async () => {
       const url = prodDatasetId
-        ? `/api/monitoring/${activeMonitorId}?prodDatasetId=${prodDatasetId}`
-        : `/api/monitoring/${activeMonitorId}`;
+        ? `${MONITORING_API}/${activeMonitorId}?prodDatasetId=${prodDatasetId}`
+        : `${MONITORING_API}/${activeMonitorId}`;
       const res = await fetch(url, { credentials: "include" });
       if (!res.ok) throw new Error(await res.text());
       return res.json();
@@ -156,20 +162,20 @@ export default function OrionDeployPage() {
   // ── Mutations ──────────────────────────────────────────────────────────────
 
   const deployMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/models/${id}/deploy`, {}),
+    mutationFn: (id: number) => apiRequest("POST", `${MODELS_API}/${id}/deploy`, {}),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
+      qc.invalidateQueries({ queryKey: [MODELS_API] });
+      qc.invalidateQueries({ queryKey: [`${ORION_API}/overview`] });
       toast({ title: "Model deployed" });
     },
     onError: (e: any) => toast({ title: "Deploy failed", description: e.message, variant: "destructive" }),
   });
 
   const undeployMut = useMutation({
-    mutationFn: (id: number) => apiRequest("POST", `/api/cpg/models/${id}/undeploy`, {}),
+    mutationFn: (id: number) => apiRequest("POST", `${MODELS_API}/${id}/undeploy`, {}),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
+      qc.invalidateQueries({ queryKey: [MODELS_API] });
+      qc.invalidateQueries({ queryKey: [`${ORION_API}/overview`] });
       toast({ title: "Model undeployed" });
     },
     onError: (e: any) => toast({ title: "Undeploy failed", description: e.message, variant: "destructive" }),
@@ -177,10 +183,10 @@ export default function OrionDeployPage() {
 
   const scoreMut = useMutation({
     mutationFn: (id: number) =>
-      apiRequest("POST", `/api/cpg/models/${id}/predict-customers`, prodDatasetId ? { prodDatasetId } : {}),
+      apiRequest("POST", `${MODELS_API}/${id}/predict-customers`, prodDatasetId ? { prodDatasetId } : {}),
     onSuccess: (data: any) => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/predictions"] });
-      qc.invalidateQueries({ queryKey: ["/api/monitoring", scoringModelId] });
+      qc.invalidateQueries({ queryKey: [PREDICTIONS_API] });
+      qc.invalidateQueries({ queryKey: [MONITORING_API, scoringModelId] });
       toast({ title: `Scoring complete — ${data.predicted ?? 0} records scored` });
       setScoringModelId(null);
     },
@@ -192,11 +198,11 @@ export default function OrionDeployPage() {
 
   const evalProdMut = useMutation({
     mutationFn: ({ modelId, prodDatasetId }: { modelId: number; prodDatasetId: number }) =>
-      apiRequest("POST", `/api/cpg/models/${modelId}/score-production`, { prodDatasetId }),
+      apiRequest("POST", `${MODELS_API}/${modelId}/score-production`, { prodDatasetId }),
     onSuccess: (data: any) => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/predictions"] });
-      qc.invalidateQueries({ queryKey: ["/api/monitoring", activeMonitorId, prodDatasetId] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
+      qc.invalidateQueries({ queryKey: [PREDICTIONS_API] });
+      qc.invalidateQueries({ queryKey: [MONITORING_API, activeMonitorId, prodDatasetId] });
+      qc.invalidateQueries({ queryKey: [MODELS_API] });
       const m = data.metrics || {};
       const parts = [`${data.predicted ?? 0} records`];
       if (m.r2 != null) parts.push(`R² ${m.r2.toFixed(3)}`);
@@ -207,11 +213,11 @@ export default function OrionDeployPage() {
   });
 
   const deleteMut = useMutation({
-    mutationFn: (id: number) => apiRequest("DELETE", `/api/cpg/models/${id}`),
+    mutationFn: (id: number) => apiRequest("DELETE", `${MODELS_API}/${id}`),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/predictions"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/overview"] });
+      qc.invalidateQueries({ queryKey: [MODELS_API] });
+      qc.invalidateQueries({ queryKey: [PREDICTIONS_API] });
+      qc.invalidateQueries({ queryKey: [`${ORION_API}/overview`] });
       toast({ title: "Model deleted" });
       setDeleteId(null);
     },
@@ -220,14 +226,14 @@ export default function OrionDeployPage() {
 
   const approveMut = useMutation({
     mutationFn: ({ id, notes, action }: { id: number; notes: string; action: string }) =>
-      apiRequest("POST", `/api/cpg/models/${id}/approve`, {
+      apiRequest("POST", `${MODELS_API}/${id}/approve`, {
         approvedBy: "ml-ops-lead",
         notes,
         action,
       }),
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["/api/cpg/models"] });
-      qc.invalidateQueries({ queryKey: ["/api/cpg/orion/governance"] });
+      qc.invalidateQueries({ queryKey: [MODELS_API] });
+      qc.invalidateQueries({ queryKey: [`${ORION_API}/governance`] });
       toast({ title: `Model ${approvalAction === "approve" ? "approved" : "rejected"}` });
       setApprovalModel(null);
       setApprovalNotes("");
@@ -531,6 +537,7 @@ export default function OrionDeployPage() {
                       <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" opacity={0.4} />
                       <XAxis dataKey="label" tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }} />
                       <YAxis
+                        yAxisId="rate"
                         domain={([dataMin, dataMax]: [number, number]) => {
                           const pad = Math.max((dataMax - dataMin) * 0.15, 0.02);
                           return [Math.max(0, parseFloat((dataMin - pad).toFixed(2))), Math.min(1, parseFloat((dataMax + pad).toFixed(2)))];
@@ -538,14 +545,20 @@ export default function OrionDeployPage() {
                         tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
                         tickFormatter={v => v.toFixed(2)}
                       />
+                      <YAxis
+                        yAxisId="mae"
+                        orientation="right"
+                        tick={{ fontSize: 9, fill: "hsl(var(--muted-foreground))" }}
+                        tickFormatter={v => Number(v).toFixed(0)}
+                      />
                       <Tooltip contentStyle={CUSTOM_TOOLTIP_STYLE} formatter={(v: any) => (v as number).toFixed(4)} />
                       <Legend wrapperStyle={{ fontSize: "10px" }} />
-                      <Line type="monotone" dataKey="auc" stroke={CHART_COLORS.r2} strokeWidth={2} dot={{ r: 3 }} name="R² proxy" />
-                      <Line type="monotone" dataKey="accuracy" stroke={CHART_COLORS.wmape} strokeWidth={2} dot={{ r: 3 }} name="Accuracy proxy" />
-                      <Line type="monotone" dataKey="recall" stroke={CHART_COLORS.mae} strokeWidth={2} dot={{ r: 3 }} strokeDasharray="4 2" name="Recall proxy" />
+                      <Line yAxisId="rate" type="monotone" dataKey="r2" stroke={CHART_COLORS.r2} strokeWidth={2} dot={{ r: 3 }} name="R²" />
+                      <Line yAxisId="rate" type="monotone" dataKey="wmape" stroke={CHART_COLORS.wmape} strokeWidth={2} dot={{ r: 3 }} name="WMAPE" />
+                      <Line yAxisId="mae" type="monotone" dataKey="mae" stroke={CHART_COLORS.mae} strokeWidth={2} dot={{ r: 3 }} strokeDasharray="4 2" name="MAE" />
                     </LineChart>
                   </ResponsiveContainer>
-                  <p className="text-[10px] text-muted-foreground">Note: Trend lines shown from monitoring snapshots. For exact regression metrics (R², WMAPE), see Health tab.</p>
+                  <p className="text-[10px] text-muted-foreground">Note: Trend lines show baseline regression metrics from monitoring snapshots. R² and WMAPE use the left axis; MAE uses the right axis.</p>
                 </div>
 
                 <div className="space-y-2">
@@ -775,58 +788,6 @@ export default function OrionDeployPage() {
           )}
         </div>
 
-        {/* ── ALL MODELS REGISTRY ── */}
-        {models.filter(m => m.status !== "training").length > 0 && (
-          <div className="bg-card border rounded-lg overflow-hidden">
-            <div className="px-4 py-3 border-b">
-              <h3 className="text-sm font-semibold">All Models — Registry</h3>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b bg-muted/30">
-                    {["Model", "Algorithm", "Deployed", "R²", "WMAPE", "Rows Scored", "Status", "Approval", "Actions"].map(h => (
-                      <th key={h} className="text-left px-3 py-2 text-muted-foreground">{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {models.filter(m => m.status !== "training").map(m => {
-                    const monStatus = getMonitoringStatus(m);
-                    return (
-                      <tr key={m.id} className="border-b hover:bg-muted/10" data-testid={`row-monitor-${m.id}`}>
-                        <td className="px-3 py-2 font-medium max-w-[140px] truncate">{m.name}</td>
-                        <td className="px-3 py-2 text-muted-foreground">{m.algorithm}</td>
-                        <td className="px-3 py-2">
-                          {m.isDeployed
-                            ? <span className="text-emerald-500 font-medium">Yes</span>
-                            : <span className="text-muted-foreground">No</span>}
-                        </td>
-                        <td className="px-3 py-2 font-mono font-bold text-emerald-600">{m.r2 != null ? m.r2.toFixed(3) : "—"}</td>
-                        <td className="px-3 py-2 font-mono">{m.wmape != null ? `${(m.wmape * 100).toFixed(1)}%` : "—"}</td>
-                        <td className="px-3 py-2 font-mono">{m.rowCount?.toLocaleString() ?? "—"}</td>
-                        <td className="px-3 py-2"><StatusBadge status={monStatus.label.split(" — ")[0]} /></td>
-                        <td className="px-3 py-2">
-                          <StatusBadge status={
-                            m.approvalStatus === "approved" ? "Approved"
-                              : m.approvalStatus === "rejected" ? "Rejected"
-                                : "Pending"
-                          } />
-                        </td>
-                        <td className="px-3 py-2">
-                          <Button size="icon" variant="ghost" className="h-6 w-6 hover:bg-red-500/10 hover:text-red-500"
-                            onClick={() => setDeleteId(m.id)} data-testid={`button-delete-monitor-${m.id}`}>
-                            <Trash2 className="w-3 h-3" />
-                          </Button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* ── Delete Dialog ── */}

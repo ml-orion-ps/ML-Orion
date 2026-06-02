@@ -100,6 +100,7 @@ class MlModel(Base):
     approval_notes = Column(Text)
     # Regression / baseline-specific metrics
     wmape = Column(Float)
+    mape = Column(Float)
     mae = Column(Float)
     rmse = Column(Float)
     r2 = Column(Float)
@@ -107,6 +108,9 @@ class MlModel(Base):
     baseline_units = Column(Float)
     residual_units = Column(Float)
     row_count = Column(Integer)
+    # Demand forecast-specific metrics
+    forecastUnits = Column(Float)
+    actualUnits = Column(Float)
 
 
 class Prediction(Base):

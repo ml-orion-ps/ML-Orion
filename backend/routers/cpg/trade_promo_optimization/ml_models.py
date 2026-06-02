@@ -19,6 +19,8 @@ from services.custom_features import (
 
 router = APIRouter(prefix="/api/models", tags=["models"])
 
+USE_CASE = "cpg_trade_promo_optimization"
+
 ALGORITHM_MAP = {
     "Gradient Boosting": "XGBoost",
     "Neural Network": "Random Forest",
@@ -162,12 +164,12 @@ def _generate_predictions_for_model(
 
 @router.get("")
 def list_models(db: Session = Depends(get_db)):
-    return storage.get_ml_models(db)
+    return storage.get_ml_models(db, use_case=USE_CASE)
 
 
 @router.get("/latest/features")
 def latest_features(dataset_id: int | None = Query(None), db: Session = Depends(get_db)):
-    models = storage.get_ml_models(db)
+    models = storage.get_ml_models(db, use_case=USE_CASE)
     if dataset_id:
         models = [m for m in models if m.dataset_id == dataset_id]
     if not models:

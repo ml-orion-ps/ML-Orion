@@ -16,7 +16,7 @@ from services.custom_features import (
     get_dataset_custom_features,
 )
 
-router = APIRouter(prefix="/models", tags=["models"])
+router = APIRouter(prefix="/models", tags=["baseline_modelling"])
 
 USE_CASE = "cpg_baseline_modelling"
 
@@ -166,17 +166,42 @@ def list_models(db: Session = Depends(get_db)):
     return storage.get_ml_models(db, use_case=USE_CASE)
 
 
+
 @router.get("/latest/features")
-def latest_features(dataset_id: int | None = Query(None), db: Session = Depends(get_db)):
+def latest_features(
+    dataset_id: int | None = Query(None,alias = "datasetId"),
+    db: Session = Depends(get_db)
+):
     models = storage.get_ml_models(db, use_case=USE_CASE)
+
     if dataset_id:
         models = [m for m in models if m.dataset_id == dataset_id]
     if not models:
-        return {"features": [], "algorithm": None, "modelId": None}
-    model = models[0]
-    fi = model.feature_importance or []
-    return {"features": fi, "algorithm": model.algorithm, "modelId": model.id}
+        return {
+            "features": [],
+            "algorithm": None,
+            "modelId": None
+        }
+    # Prefer deployed model first
+    deployed_models = [m for m in models if m.is_deployed]
 
+    if deployed_models:
+        model = sorted(
+            deployed_models,
+            key=lambda x: x.trained_at,
+            reverse=True
+        )[0]
+    else:
+        model = sorted(
+            models,
+            key=lambda x: x.trained_at,
+            reverse=True
+        )[0]
+    return {
+        "features": model.feature_importance or [],
+        "algorithm": model.algorithm,
+        "modelId": model.id
+    }
 
 @router.get("/{model_id}", response_model=MlModelOut)
 def get_model(model_id: int, db: Session = Depends(get_db)):
@@ -237,11 +262,12 @@ def train_model(body: TrainRequest, db: Session = Depends(get_db)):
         "residual_units": totals.get("residualUnits"),
         "row_count": row_count,
         "hyperparameters": best_params,
-        "feature_importance": [],
+        "feature_importance": result.get("featureImportance", []),
         "confusion_matrix": None,
         "model_weights": {
             "promoColumnsUsed": summary.get("promoColumnsUsed", []),
             "totals": totals,
+            "predictions": result.get("predictions", []),
         },
         "is_deployed": False,
         "deployed_at": None,

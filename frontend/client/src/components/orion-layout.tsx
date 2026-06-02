@@ -1,8 +1,6 @@
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Brain, RefreshCw } from "lucide-react";
 import { useState } from "react";
+import { Link } from "wouter";
 
 interface OrionLayoutProps {
   title: string;
@@ -36,23 +34,6 @@ export function OrionLayout({ title, subtitle, isLoading, children, actions }: O
             {subtitle && (
               <span className="hidden md:block text-xs text-muted-foreground border-l pl-3">{subtitle}</span>
             )}
-          </div>
-          <div className="flex items-center gap-2">
-            <Select value={period} onValueChange={setPeriod}>
-              <SelectTrigger className="h-7 text-xs w-28" data-testid="select-period">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="q1-2026">Q1 2026</SelectItem>
-                <SelectItem value="q4-2025">Q4 2025</SelectItem>
-                <SelectItem value="ytd">YTD 2026</SelectItem>
-                <SelectItem value="rolling-90">Rolling 90d</SelectItem>
-              </SelectContent>
-            </Select>
-            {actions}
-            <Button variant="ghost" size="icon" className="h-7 w-7" data-testid="button-refresh">
-              <RefreshCw className="w-3.5 h-3.5" />
-            </Button>
           </div>
         </div>
         {isLoading && (
@@ -149,12 +130,12 @@ export function StatusBadge({ status }: { status: string }) {
 
 export function OrionNav({ current, basePath = "/tmt/customer-churn/orion" }: { current: string; basePath?: string }) {
   const pages = [
-    { label: "Overview",      slug: "overview" },
-    { label: "Data Hub",      slug: "data" },
-    { label: "Experiments",   slug: "experiments" },
-    { label: "Deploy & Score",slug: "deploy" },
-    { label: "Outcomes",      slug: "outcomes" },
-    { label: "Governance",    slug: "governance" },
+    { label: "Overview", slug: "overview" },
+    { label: "Data Hub", slug: "data" },
+    { label: "Experiments", slug: "experiments" },
+    { label: "Deploy & Score", slug: "deploy" },
+    { label: "Outcomes", slug: "outcomes" },
+    { label: "Governance", slug: "governance" },
   ];
   return (
     <div className="flex items-center gap-1 text-xs text-muted-foreground flex-wrap">
@@ -163,14 +144,13 @@ export function OrionNav({ current, basePath = "/tmt/customer-churn/orion" }: { 
         return (
           <span key={path} className="flex items-center gap-1">
             {i > 0 && <span className="text-muted-foreground/40">›</span>}
-            <a
+            <Link
               href={path}
-              className={`hover:text-foreground transition-colors px-1.5 py-0.5 rounded ${
-                current === path ? "text-primary font-medium bg-primary/5" : ""
-              }`}
+              className={`hover:text-foreground transition-colors px-1.5 py-0.5 rounded ${current === path ? "text-primary font-medium bg-primary/5" : ""
+                }`}
             >
               {p.label}
-            </a>
+            </Link>
           </span>
         );
       })}

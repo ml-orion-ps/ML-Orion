@@ -5,12 +5,14 @@ from database import get_db
 import storage
 from services.custom_features import get_dataset_rows
 
-router = APIRouter(prefix="/api/orion", tags=["orion"])
+router = APIRouter(prefix="/orion", tags=["orion"])
+
+USE_CASE = "cpg_promo_uplift"
 
 
 @router.get("/overview")
 def orion_overview(db: Session = Depends(get_db)):
-    models = storage.get_ml_models(db)
+    models = storage.get_ml_models(db, use_case=USE_CASE)
     datasets = storage.get_datasets(db)
     customers = storage.get_customers(db)
     predictions = storage.get_predictions(db)
@@ -137,30 +139,66 @@ def customer_dataset(db: Session = Depends(get_db)):
 
 @router.get("/governance")
 def governance(db: Session = Depends(get_db)):
-    models = storage.get_ml_models(db)
+    models = storage.get_ml_models(db, use_case=USE_CASE)
     audit = storage.get_audit_log(db, 100)
+
+    datasets = {d.id: d for d in storage.get_datasets(db)}
+
+    from sqlalchemy import func as _func
+    from models import Prediction as _Pred
+    pred_counts: dict[int, int] = {}
+    try:
+        rows = db.query(_Pred.model_id, _func.count(_Pred.id)).group_by(_Pred.model_id).all()
+        pred_counts = {r[0]: r[1] for r in rows}
+    except Exception:
+        pass
 
     approved = [m for m in models if m.approval_status == "approved"]
     pending = [m for m in models if m.approval_status == "pending"]
     deployed = [m for m in models if m.is_deployed]
 
+    def _compliance(m) -> dict:
+        ds = datasets.get(m.dataset_id)
+        weights = m.model_weights or {}
+        summary = weights.get("summary", {}) if isinstance(weights, dict) else {}
+        return {
+            "dataLineage": bool(ds),
+            "metricsRecorded": bool(m.auc is not None or summary.get("metrics")),
+            "featureDocumented": bool(m.feature_importance or summary.get("promoColumnsUsed")),
+            "hyperparamsLogged": bool(m.hyperparameters),
+        }
+
+    def _registry_row(m) -> dict:
+        ds = datasets.get(m.dataset_id)
+        weights = m.model_weights or {}
+        summary = weights.get("summary", {}) if isinstance(weights, dict) else {}
+        metrics = summary.get("metrics", {}) if isinstance(summary, dict) else {}
+        promo_cols = summary.get("promoColumnsUsed", []) if isinstance(summary, dict) else []
+        r2 = metrics.get("r2") if metrics else None
+        rmse = metrics.get("rmse") if metrics else None
+        mae = metrics.get("mae") if metrics else None
+        return {
+            "id": m.id, "name": m.name, "algorithm": m.algorithm,
+            "status": m.status, "approvalStatus": m.approval_status,
+            "isDeployed": m.is_deployed, "trainedAt": m.trained_at, "deployedAt": m.deployed_at,
+            "approvedBy": m.approved_by, "approvedAt": m.approved_at,
+            "datasetName": ds.name if ds else "—", "datasetRows": ds.row_count if ds else 0,
+            "r2": r2 if r2 is not None else m.auc,
+            "rmse": rmse, "mae": mae,
+            "predictionCount": pred_counts.get(m.id, 0),
+            "promoCols": len(promo_cols),
+            "complianceChecks": _compliance(m),
+        }
+
     return {
-        "modelInventory": [
-            {
-                "id": m.id, "name": m.name, "algorithm": m.algorithm,
-                "status": m.status, "approvalStatus": m.approval_status,
-                "isDeployed": m.is_deployed, "trainedAt": m.trained_at,
-                "approvedBy": m.approved_by, "approvedAt": m.approved_at,
-            }
-            for m in models
-        ],
+        "registry": [_registry_row(m) for m in models],
         "summary": {
             "totalModels": len(models),
-            "approvedModels": len(approved),
+            "approved": len(approved),
             "pendingApproval": len(pending),
-            "deployedModels": len(deployed),
+            "deployed": len(deployed),
         },
-        "recentActivity": [
+        "auditLog": [
             {
                 "id": a.id, "action": a.action, "entityType": a.entity_type,
                 "entityName": a.entity_name, "detail": a.detail,
